@@ -103,7 +103,8 @@ button i {
 }
 
 .rifa-activa {
-    background-color: #ecf0f1;
+    color: #050020;
+    background-color: #93c704;
     padding: 10px;
     border-radius: 5px;
     margin-bottom: 10px;
