@@ -1159,10 +1159,10 @@ function guardarNuevoCliente() {
 function guardarClienteEditado(id) {
     const nombre = document.getElementById('cliente-nombre').value.trim();
     const telefono = document.getElementById('cliente-telefono').value.trim();
-    const numeros = document.getElementById('cliente-numeros').value.trim();
+    const numerosInput = document.getElementById('cliente-numeros').value.trim();
     const estado = document.getElementById('cliente-estado').value;
     
-    if (!nombre || !telefono || !numeros) {
+    if (!nombre || !telefono || !numerosInput) {
         alert('Por favor completa todos los campos');
         return;
     }
@@ -1170,7 +1170,13 @@ function guardarClienteEditado(id) {
     const clienteIndex = clientes.findIndex(c => c.id === id);
     if (clienteIndex === -1) return;
     
-    const numerosArray = numeros.split(',').map(n => n.trim());
+    // Limpiar los números quitando cualquier estado que puedan tener
+    const numerosArray = numerosInput.split(',').map(n => {
+        const num = n.trim();
+        // Si el número tiene formato "010:apartado", solo tomar la parte del número
+        return num.includes(':') ? num.split(':')[0] : num;
+    });
+    
     const rifa = rifas.find(r => r.id === clientes[clienteIndex].rifaId);
     
     for (const num of numerosArray) {
@@ -1191,7 +1197,7 @@ function guardarClienteEditado(id) {
     
     clientesRifa.forEach(cliente => {
         cliente.numeros.split(',').forEach(num => {
-            const numFormateado = parseInt(num).toString().padStart(3, '0');
+            const numFormateado = parseInt(num.includes(':') ? num.split(':')[0] : num).toString().padStart(3, '0');
             numerosOcupados[numFormateado] = true;
         });
     });
@@ -1206,11 +1212,29 @@ function guardarClienteEditado(id) {
         return;
     }
     
+    // Mantener los estados individuales de los números que ya los tenían
+    const clienteActual = clientes[clienteIndex];
+    const numerosConEstado = numerosArray.map(num => {
+        const numFormateado = parseInt(num).toString().padStart(3, '0');
+        // Buscar si el número ya tenía un estado definido
+        const numExistente = clienteActual.numeros.split(',').find(n => {
+            const numPart = n.includes(':') ? n.split(':')[0] : n;
+            return numPart === numFormateado;
+        });
+        
+        // Si existía y tenía estado, mantenerlo, de lo contrario usar el estado general
+        if (numExistente && numExistente.includes(':')) {
+            return numExistente;
+        } else {
+            return numFormateado;
+        }
+    });
+    
     clientes[clienteIndex] = {
-        ...clientes[clienteIndex],
+        ...clienteActual,
         nombre,
         telefono,
-        numeros: numerosArray.map(n => parseInt(n).toString().padStart(3, '0')).join(','),
+        numeros: numerosConEstado.join(','),
         estado
     };
     
@@ -1295,7 +1319,7 @@ function mostrarMenuNumeros(event, numero, cliente) {
 
 function cambiarEstadoNumero(numero, cliente, nuevoEstado) {
     const nuevosNumeros = cliente.numeros.split(',').map(num => {
-        const [numActual] = num.split(':');
+        const numActual = num.includes(':') ? num.split(':')[0] : num;
         return numActual === numero ? `${numero}:${nuevoEstado}` : num;
     });
 
@@ -1343,10 +1367,15 @@ function enviarWhatsApp(cliente) {
     const rifa = rifas.find(r => r.id === cliente.rifaId);
     const plantilla = localStorage.getItem('rifasSucre_plantilla') || '';
     
+    // Limpiar los números para mostrar (quitar los estados)
+    const numerosLimpios = cliente.numeros.split(',').map(num => {
+        return num.includes(':') ? num.split(':')[0] : num;
+    }).join(', ');
+    
     let mensaje = plantilla
         .replace(/{nombre}/g, cliente.nombre)
         .replace(/{rifa}/g, rifa.nombre)
-        .replace(/{numeros}/g, cliente.numeros.split(',').join(', '))
+        .replace(/{numeros}/g, numerosLimpios)
         .replace(/{estado}/g, cliente.estado);
     
     const url = `https://wa.me/${cliente.telefono}?text=${encodeURIComponent(mensaje)}`;
@@ -1371,13 +1400,16 @@ function generarTicket(cliente) {
         color: #333;
     `;
 
-    const numerosHTML = cliente.numeros.split(',').map(num => {
-        const [numero, estado] = num.includes(':') ? num.split(':') : [num, cliente.estado];
+    const numerosHTML = cliente.numeros.split(',').map(numCompleto => {
+        const [num, estadoIndividual] = numCompleto.includes(':') ? 
+            numCompleto.split(':') : 
+            [numCompleto, cliente.estado];
+            
         return `<span style="display: inline-block; margin: 2px; padding: 2px 5px; 
                 border-radius: 3px; border: 1px solid #ddd; 
-                background: ${estado === 'pagado' ? '#2ecc71' : '#f1c40f'}; 
-                color: ${estado === 'pagado' ? 'white' : '#333'}">
-                ${numero}
+                background: ${estadoIndividual === 'pagado' ? '#2ecc71' : '#f1c40f'}; 
+                color: ${estadoIndividual === 'pagado' ? 'white' : '#333'}">
+                ${num}
                 </span>`;
     }).join('');
 
@@ -1385,11 +1417,16 @@ function generarTicket(cliente) {
     let mensajeTicket = localStorage.getItem('plantillaTicketMensaje') || 
         'Cliente: {nombre}\nTeléfono: {telefono}\nNúmeros: {numeros}\nEstado: {estado}\nFecha: {fecha}';
 
+    // Limpiar los números para mostrar en el mensaje (quitar los estados)
+    const numerosLimpios = cliente.numeros.split(',').map(num => {
+        return num.includes(':') ? num.split(':')[0] : num;
+    }).join(', ');
+
     mensajeTicket = mensajeTicket
         .replace(/{nombre}/g, cliente.nombre)
         .replace(/{telefono}/g, cliente.telefono)
         .replace(/{rifa}/g, rifa.nombre)
-        .replace(/{numeros}/g, cliente.numeros.split(',').join(', '))
+        .replace(/{numeros}/g, numerosLimpios)
         .replace(/{estado}/g, cliente.estado)
         .replace(/{fecha}/g, new Date().toLocaleDateString());
 
