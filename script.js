@@ -235,57 +235,73 @@ async function validarAcceso() {
 
 // Función para verificar si un código es válido (sincronizado con Firebase)
 async function verificarCodigo(codigo) {
-    // 1. Verificar formato del código
-    if (!codigo || codigo.length !== 8 || isNaN(codigo)) {
-        console.log("Código inválido: debe ser 8 dígitos numéricos");
+    codigo = codigo.toString().trim();
+    
+    // Validación básica
+    if (codigo.length !== 8 || !/^\d+$/.test(codigo)) {
+        alert("❌ El código debe tener exactamente 8 dígitos");
         return false;
     }
 
-    // 2. Verificar en Firebase
     try {
-        const snapshot = await db.collection("codigos")
+        // Buscar en Firebase
+        const query = await db.collection("codigos")
             .where("codigo", "==", codigo)
             .limit(1)
             .get();
 
-        if (snapshot.empty) {
-            console.log("Código no existe en Firebase");
+        if (query.empty) {
+            alert("❌ Código no encontrado");
             return false;
         }
 
-        const doc = snapshot.docs[0];
+        const doc = query.docs[0];
         const data = doc.data();
 
-        // 3. Verificar expiración
-        const ahora = new Date();
-        const expiracion = new Date(data.expiracion);
-        
-        if (ahora > expiracion) {
-            console.log("Código expirado");
+        // Verificar expiración
+        if (new Date() > new Date(data.expiracion)) {
+            alert("⚠️ Código expirado");
             return false;
         }
 
-        // 4. Verificar si ya fue usado
+        // Verificar uso previo
         if (data.usado) {
-            console.log("Código ya fue usado");
+            alert("⚠️ Este código ya fue utilizado");
             return false;
         }
 
-        // 5. Marcar como usado
+        // Obtener ID único del dispositivo
+        const dispositivoId = obtenerIdDispositivo();
+
+        // Actualizar como usado
         await db.collection("codigos").doc(doc.id).update({
             usado: true,
-            dispositivo: obtenerIdDispositivo(),
-            fechaUso: ahora.toISOString()
+            dispositivo: dispositivoId,
+            fechaUso: new Date().toISOString()
         });
 
-        console.log("Código válido y registrado");
+        // Guardar localmente
+        const codigosUsados = JSON.parse(localStorage.getItem('codigosUsados') || []);
+        codigosUsados.push(codigo);
+        localStorage.setItem('codigosUsados', JSON.stringify(codigosUsados));
+
+        alert("✅ Código válido. Acceso concedido");
         return true;
 
     } catch (error) {
-        console.error("Error al verificar código:", error);
-        alert("Error de conexión. Intenta nuevamente.");
+        console.error("Error en verificación:", error);
+        alert("🔴 Error de conexión. Intenta nuevamente");
         return false;
     }
+}
+
+function obtenerIdDispositivo() {
+    let id = localStorage.getItem('deviceId');
+    if (!id) {
+        id = 'd-' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('deviceId', id);
+    }
+    return id;
 }
 
 function activarPrueba() {
@@ -1729,8 +1745,6 @@ function mostrarSeguridad() {
         return;
     }
     
-    const codigosValidos = JSON.parse(localStorage.getItem('rifasSucre_codigosValidos') || "[]");
-    
     seguridadSection.innerHTML = `
         <h2>Seguridad</h2>
         <p>Desde aquí puedes generar códigos de acceso de un solo uso.</p>
@@ -1750,12 +1764,14 @@ function mostrarSeguridad() {
         
         <h3>Códigos Generados</h3>
         <div id="lista-codigos">
-            ${codigosValidos.length > 0 ? 
-                codigosValidos.map(codigo => `
+            ${codigosFirebase.length > 0 ? 
+                codigosFirebase.map(codigo => `
                     <div class="codigo-item">
                         <p><strong>Código:</strong> ${codigo.codigo}</p>
                         <p><strong>Expira:</strong> ${new Date(codigo.expiracion).toLocaleDateString()}</p>
                         <p><strong>Generado:</strong> ${new Date(codigo.generadoEl).toLocaleDateString()}</p>
+                        <p><strong>Estado:</strong> ${codigo.usado ? 'USADO' : 'DISPONIBLE'}</p>
+                        ${codigo.usado ? `<p><strong>Dispositivo:</strong> ${codigo.dispositivo || 'No registrado'}</p>` : ''}
                         <hr>
                     </div>
                 `).join('') : 
@@ -1823,7 +1839,6 @@ async function generarCodigoAcceso() {
     
     alert(`Código generado: ${codigo}\nEste código expira en ${duracion} días.`);
 }
-
 async function generarCodigoFirebase(duracionDias) {
     try {
         if (!superusuarioActivo) {
