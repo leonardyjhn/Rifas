@@ -1,11 +1,10 @@
-// Configuración de Firebase (¡Reemplaza estos valores con los tuyos!)
 const firebaseConfig = {
-  apiKey: "TU_API_KEY",
-  authDomain: "TU_PROYECTO.firebaseapp.com",
-  projectId: "TU_PROYECTO",
-  storageBucket: "TU_PROYECTO.appspot.com",
-  messagingSenderId: "TU_SENDER_ID",
-  appId: "TU_APP_ID"
+  apiKey: "AIzaSyBfiL057BQQf0vpcN1LoLGnlyktfvsNHiw",
+  authDomain: "rifasleosoc.firebaseapp.com",
+  projectId: "rifasleosoc",
+  storageBucket: "rifasleosoc.firebasestorage.app",
+  messagingSenderId: "4575769760",
+  appId: "1:4575769760:web:5530d10bf0cde3a55ec5c5"
 };
 
 // Inicializar Firebase
