@@ -235,8 +235,19 @@ async function validarAcceso() {
 
 // Función para verificar si un código es válido (sincronizado con Firebase)
 async function verificarCodigo(codigo) {
+    // Primero verificar en localStorage (códigos generados localmente)
+    const codigosLocales = JSON.parse(localStorage.getItem('rifasSucre_codigosValidos') || "[]");
+    const codigoLocal = codigosLocales.find(c => c.codigo === codigo);
+    
+    if (codigoLocal) {
+        const expirado = new Date(codigoLocal.expiracion) < new Date();
+        if (!expirado) {
+            return true;
+        }
+    }
+    
+    // Si no está localmente o está expirado, verificar en Firebase
     try {
-        // Buscar el código en Firebase
         const querySnapshot = await db.collection("codigos")
             .where("codigo", "==", codigo)
             .where("expiracion", ">", new Date().toISOString())
@@ -247,24 +258,11 @@ async function verificarCodigo(codigo) {
         if (querySnapshot.empty) return false;
 
         const doc = querySnapshot.docs[0];
-        const codigoData = doc.data();
-
-        // Verificar si ya está registrado localmente
-        const codigosUsados = JSON.parse(localStorage.getItem('rifasSucre_codigos') || []);
-        if (codigosUsados.includes(codigo)) {
-            return false;
-        }
-
-        // Marcar como usado en Firebase
         await db.collection("codigos").doc(doc.id).update({
             usado: true,
             dispositivo: obtenerIdDispositivo(),
             fechaUso: new Date().toISOString()
         });
-
-        // Guardar localmente
-        codigosUsados.push(codigo);
-        localStorage.setItem('rifasSucre_codigos', JSON.stringify(codigosUsados));
 
         return true;
     } catch (error) {
@@ -1714,6 +1712,8 @@ function mostrarSeguridad() {
         return;
     }
     
+    const codigosValidos = JSON.parse(localStorage.getItem('rifasSucre_codigosValidos') || "[]");
+    
     seguridadSection.innerHTML = `
         <h2>Seguridad</h2>
         <p>Desde aquí puedes generar códigos de acceso de un solo uso.</p>
@@ -1731,8 +1731,20 @@ function mostrarSeguridad() {
         <button id="btn-generar-codigo-modal"><i class="fas fa-key"></i> Generar Código</button>
         <button id="btn-cerrar-sesion"><i class="fas fa-sign-out-alt"></i> Cerrar Sesión Superusuario</button>
         
-        <h3>Códigos Generados Recientemente</h3>
-        <div id="lista-codigos"></div>
+        <h3>Códigos Generados</h3>
+        <div id="lista-codigos">
+            ${codigosValidos.length > 0 ? 
+                codigosValidos.map(codigo => `
+                    <div class="codigo-item">
+                        <p><strong>Código:</strong> ${codigo.codigo}</p>
+                        <p><strong>Expira:</strong> ${new Date(codigo.expiracion).toLocaleDateString()}</p>
+                        <p><strong>Generado:</strong> ${new Date(codigo.generadoEl).toLocaleDateString()}</p>
+                        <hr>
+                    </div>
+                `).join('') : 
+                '<p>No hay códigos generados recientemente.</p>'
+            }
+        </div>
         ` : ''}
     `;
     
@@ -1743,28 +1755,6 @@ function mostrarSeguridad() {
         });
         
         document.getElementById('btn-cerrar-sesion').addEventListener('click', cerrarSesionSuperusuario);
-        
-        const codigosValidos = JSON.parse(localStorage.getItem('rifasSucre_codigosValidos') || '[]');
-        const listaCodigos = document.getElementById('lista-codigos');
-        
-        if (codigosValidos.length === 0) {
-            listaCodigos.innerHTML = '<p>No hay códigos generados recientemente.</p>';
-        } else {
-            const lista = document.createElement('div');
-            
-            codigosValidos.forEach(codigo => {
-                const item = document.createElement('div');
-                item.className = 'codigo-item';
-                item.innerHTML = `
-                    <p><strong>Código:</strong> ${codigo.codigo}</p>
-                    <p><strong>Expira:</strong> ${new Date(codigo.expiracion).toLocaleString()}</p>
-                    <hr>
-                `;
-                lista.appendChild(item);
-            });
-            
-            listaCodigos.appendChild(lista);
-        }
     }
 }
 
@@ -1776,30 +1766,45 @@ async function generarCodigoAcceso() {
         return;
     }
     
-    const codigo = await generarCodigoFirebase(duracion);
+    // 1. Generar código numérico de 8 dígitos
+    const codigo = Math.floor(10000000 + Math.random() * 90000000).toString();
     
-    if (codigo) {
-        // Mostrar código generado
-        document.getElementById('codigo-generado').textContent = codigo;
-        document.getElementById('codigo-generado-container').classList.remove('hidden');
-        
-        // Guardar el código localmente
-        const codigosValidos = JSON.parse(localStorage.getItem('rifasSucre_codigosValidos') || []);
-        
-        const nuevoCodigo = {
-            codigo: codigo,
-            expiracion: new Date(new Date().getTime() + duracion * 24 * 60 * 60 * 1000).toISOString(),
-            generadoEl: new Date().toISOString()
-        };
-        
-        codigosValidos.push(nuevoCodigo);
-        localStorage.setItem('rifasSucre_codigosValidos', JSON.stringify(codigosValidos));
-        
-        // Actualizar lista de códigos en sección de seguridad
-        mostrarSeguridad();
-    } else {
-        alert('Error al generar código');
+    // 2. Calcular fecha de expiración
+    const expiracion = new Date();
+    expiracion.setDate(expiracion.getDate() + duracion);
+    
+    // 3. Guardar en Firebase
+    try {
+        await db.collection("codigos").add({
+            codigo,
+            expiracion: expiracion.toISOString(),
+            generadoEl: new Date().toISOString(),
+            usado: false,
+            generadoPor: superusuarioActivo ? "superusuario" : "sistema"
+        });
+    } catch (error) {
+        console.error("Error al guardar en Firebase:", error);
+        alert("Error al conectar con el servidor. Intenta nuevamente.");
+        return;
     }
+    
+    // 4. Guardar localmente
+    const codigosValidos = JSON.parse(localStorage.getItem('rifasSucre_codigosValidos') || "[]");
+    codigosValidos.push({
+        codigo: codigo,
+        expiracion: expiracion.toISOString(),
+        generadoEl: new Date().toISOString()
+    });
+    localStorage.setItem('rifasSucre_codigosValidos', JSON.stringify(codigosValidos));
+    
+    // 5. Mostrar al usuario
+    document.getElementById('codigo-generado').textContent = codigo;
+    document.getElementById('codigo-generado-container').classList.remove('hidden');
+    
+    // 6. Actualizar la lista visible
+    mostrarSeguridad();
+    
+    alert(`Código generado: ${codigo}\nEste código expira en ${duracion} días.`);
 }
 
 async function generarCodigoFirebase(duracionDias) {
