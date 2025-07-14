@@ -1783,6 +1783,18 @@ async function generarCodigoAcceso() {
         document.getElementById('codigo-generado').textContent = codigo;
         document.getElementById('codigo-generado-container').classList.remove('hidden');
         
+        // Guardar el código localmente
+        const codigosValidos = JSON.parse(localStorage.getItem('rifasSucre_codigosValidos') || []);
+        
+        const nuevoCodigo = {
+            codigo: codigo,
+            expiracion: new Date(new Date().getTime() + duracion * 24 * 60 * 60 * 1000).toISOString(),
+            generadoEl: new Date().toISOString()
+        };
+        
+        codigosValidos.push(nuevoCodigo);
+        localStorage.setItem('rifasSucre_codigosValidos', JSON.stringify(codigosValidos));
+        
         // Actualizar lista de códigos en sección de seguridad
         mostrarSeguridad();
     } else {
