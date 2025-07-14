@@ -1,13 +1,28 @@
+// Configuración de Firebase (¡Reemplaza estos valores con los tuyos!)
+const firebaseConfig = {
+  apiKey: "TU_API_KEY",
+  authDomain: "TU_PROYECTO.firebaseapp.com",
+  projectId: "TU_PROYECTO",
+  storageBucket: "TU_PROYECTO.appspot.com",
+  messagingSenderId: "TU_SENDER_ID",
+  appId: "TU_APP_ID"
+};
+
+// Inicializar Firebase
+const app = firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+const auth = firebase.auth();
+
 // Variables globales
 let rifas = [];
 let clientes = [];
 let rifaActiva = null;
-let codigosUsados = [];
 let superusuarioActivo = false;
 let superusuarioTimeout = null;
 let modoPrueba = false;
 let fechaInicioPrueba = null;
-let filtroClientes = 'todos'; // Nuevo: para controlar el filtrado de clientes
+let filtroClientes = 'todos';
+let codigosFirebase = []; // Para almacenar códigos sincronizados
 
 // Elementos del DOM
 const accesoContainer = document.getElementById('acceso-container');
@@ -46,7 +61,24 @@ document.addEventListener('DOMContentLoaded', () => {
     cargarDatos();
     configurarEventos();
     verificarPrueba();
+    iniciarFirebase();
 });
+
+// Función para iniciar Firebase y sincronizar códigos
+function iniciarFirebase() {
+    // Escuchar cambios en la colección de códigos
+    db.collection("codigos").onSnapshot((snapshot) => {
+        codigosFirebase = [];
+        snapshot.forEach((doc) => {
+            codigosFirebase.push(doc.data());
+        });
+        
+        // Si estamos en la sección de seguridad, actualizarla
+        if (!seguridadSection.classList.contains('hidden')) {
+            mostrarSeguridad();
+        }
+    });
+}
 
 function cargarDatos() {
     // Cargar nombre de la app
@@ -157,7 +189,7 @@ function guardarNuevoNombre() {
     document.querySelector('#acceso-container h1').textContent = nuevoNombre;
 }
 
-function validarAcceso() {
+async function validarAcceso() {
     const codigo = codigoAccesoInput.value.trim();
     
     if (codigo.length !== 8) {
@@ -165,9 +197,12 @@ function validarAcceso() {
         return;
     }
     
-    // Verificar si el código ya fue usado
+    // Verificar si el código ya fue usado localmente
+    const codigosUsados = JSON.parse(localStorage.getItem('rifasSucre_codigos') || []);
     if (codigosUsados.includes(codigo)) {
-        alert('Este código ya ha sido utilizado');
+        accesoContainer.classList.add('hidden');
+        mainContainer.classList.remove('hidden');
+        mostrarSeccion('rifas');
         return;
     }
     
@@ -187,24 +222,55 @@ function validarAcceso() {
         return;
     }
     
-    // Verificar si el código existe y no ha expirado
-    const codigosValidos = JSON.parse(localStorage.getItem('rifasSucre_codigosValidos') || '[]');
-    const codigoValido = codigosValidos.find(c => c.codigo === codigo && new Date(c.expiracion) > new Date());
+    // Verificar el código en Firebase
+    const codigoValido = await verificarCodigo(codigo);
     
     if (codigoValido) {
-        // Marcar código como usado
-        codigosUsados.push(codigo);
-        localStorage.setItem('rifasSucre_codigos', JSON.stringify(codigosUsados));
-        
-        // Eliminar código válido
-        const nuevosCodigos = codigosValidos.filter(c => c.codigo !== codigo);
-        localStorage.setItem('rifasSucre_codigosValidos', JSON.stringify(nuevosCodigos));
-        
         accesoContainer.classList.add('hidden');
         mainContainer.classList.remove('hidden');
         mostrarSeccion('rifas');
     } else {
         alert('Código inválido o expirado. El período de prueba ha terminado. Por favor, adquiere un código de acceso.');
+    }
+}
+
+// Función para verificar si un código es válido (sincronizado con Firebase)
+async function verificarCodigo(codigo) {
+    try {
+        // Buscar el código en Firebase
+        const querySnapshot = await db.collection("codigos")
+            .where("codigo", "==", codigo)
+            .where("expiracion", ">", new Date().toISOString())
+            .where("usado", "==", false)
+            .limit(1)
+            .get();
+
+        if (querySnapshot.empty) return false;
+
+        const doc = querySnapshot.docs[0];
+        const codigoData = doc.data();
+
+        // Verificar si ya está registrado localmente
+        const codigosUsados = JSON.parse(localStorage.getItem('rifasSucre_codigos') || []);
+        if (codigosUsados.includes(codigo)) {
+            return false;
+        }
+
+        // Marcar como usado en Firebase
+        await db.collection("codigos").doc(doc.id).update({
+            usado: true,
+            dispositivo: obtenerIdDispositivo(),
+            fechaUso: new Date().toISOString()
+        });
+
+        // Guardar localmente
+        codigosUsados.push(codigo);
+        localStorage.setItem('rifasSucre_codigos', JSON.stringify(codigosUsados));
+
+        return true;
+    } catch (error) {
+        console.error("Error verificando código:", error);
+        return false;
     }
 }
 
@@ -1662,7 +1728,7 @@ function mostrarSeguridad() {
     }
 }
 
-function generarCodigoAcceso() {
+async function generarCodigoAcceso() {
     const duracion = parseInt(document.getElementById('codigo-duracion').value);
     
     if (isNaN(duracion) || duracion <= 0) {
@@ -1670,29 +1736,44 @@ function generarCodigoAcceso() {
         return;
     }
     
-    // Generar código aleatorio de 8 dígitos
-    const codigo = Math.floor(10000000 + Math.random() * 90000000).toString();
+    const codigo = await generarCodigoFirebase(duracion);
     
-    // Calcular fecha de expiración
-    const expiracion = new Date();
-    expiracion.setDate(expiracion.getDate() + duracion);
-    
-    // Guardar código
-    const codigosValidos = JSON.parse(localStorage.getItem('rifasSucre_codigosValidos') || '[]');
-    codigosValidos.push({
-        codigo,
-        expiracion: expiracion.toISOString(),
-        generadoEl: new Date().toISOString()
-    });
-    
-    localStorage.setItem('rifasSucre_codigosValidos', JSON.stringify(codigosValidos));
-    
-    // Mostrar código generado
-    document.getElementById('codigo-generado').textContent = codigo;
-    document.getElementById('codigo-generado-container').classList.remove('hidden');
-    
-    // Actualizar lista de códigos en sección de seguridad
-    mostrarSeguridad();
+    if (codigo) {
+        // Mostrar código generado
+        document.getElementById('codigo-generado').textContent = codigo;
+        document.getElementById('codigo-generado-container').classList.remove('hidden');
+        
+        // Actualizar lista de códigos en sección de seguridad
+        mostrarSeguridad();
+    } else {
+        alert('Error al generar código');
+    }
+}
+
+async function generarCodigoFirebase(duracionDias) {
+    try {
+        if (!superusuarioActivo) {
+            alert('Solo el superusuario puede generar códigos');
+            return null;
+        }
+
+        const codigo = Math.floor(10000000 + Math.random() * 90000000).toString();
+        const expiracion = new Date();
+        expiracion.setDate(expiracion.getDate() + duracionDias);
+
+        await db.collection("codigos").add({
+            codigo,
+            expiracion: expiracion.toISOString(),
+            generadoEl: new Date().toISOString(),
+            usado: false,
+            generadoPor: auth.currentUser.uid
+        });
+
+        return codigo;
+    } catch (error) {
+        console.error("Error generando código:", error);
+        return null;
+    }
 }
 
 function cerrarSesionSuperusuario() {

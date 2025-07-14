@@ -878,3 +878,38 @@ button i {
     color: #7f8c8d;
     font-size: 12px;
 }
+
+/* Estilos para la lista de códigos */
+.codigo-item {
+    background-color: #f9f9f9;
+    padding: 15px;
+    border-radius: 5px;
+    margin-bottom: 15px;
+    border-left: 4px solid #3498db;
+}
+
+.codigo-item hr {
+    border: none;
+    border-top: 1px solid #eee;
+    margin: 10px 0;
+}
+
+/* Estilo para el botón de generar código */
+#btn-generar-codigo-modal {
+    background-color: #9b59b6;
+    margin-bottom: 20px;
+}
+
+#btn-generar-codigo-modal:hover {
+    background-color: #8e44ad;
+}
+
+/* Estilo para el botón de cerrar sesión */
+#btn-cerrar-sesion {
+    background-color: #e74c3c;
+    margin-bottom: 20px;
+}
+
+#btn-cerrar-sesion:hover {
+    background-color: #c0392b;
+}
