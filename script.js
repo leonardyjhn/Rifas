@@ -334,29 +334,70 @@ function mostrarModalSuperusuario() {
     document.getElementById('superusuario-clave').focus();
 }
 
-function validarSuperusuario() {
+async function validarSuperusuario() {
     const clave = document.getElementById('superusuario-clave').value.trim();
+    const superusuarioEmail = "leonardyjhn@gmail.com"; // Tu email registrado en Firebase
     
-    if (clave === "Leonardy") {
-        superusuarioActivo = true;
-        superusuarioModal.classList.add('hidden');
+    // Validar campo vacío
+    if (!clave) {
+        alert('Por favor ingresa la clave de superusuario');
+        return;
+    }
+
+    try {
+        // 1. Autenticar en Firebase
+        const userCredential = await auth.signInWithEmailAndPassword(
+            superusuarioEmail,
+            clave
+        );
         
-        // Mostrar botón de seguridad
-        document.getElementById('btn-seguridad').classList.remove('hidden');
+        // 2. Verificar autenticación exitosa
+        if (userCredential.user) {
+            superusuarioActivo = true;
+            superusuarioModal.classList.add('hidden');
+            
+            // 3. Mostrar botón de seguridad
+            document.getElementById('btn-seguridad').classList.remove('hidden');
+            
+            // 4. Configurar timeout de 1 hora
+            if (superusuarioTimeout) clearTimeout(superusuarioTimeout);
+            superusuarioTimeout = setTimeout(() => {
+                superusuarioActivo = false;
+                document.getElementById('btn-seguridad').classList.add('hidden');
+                alert('Sesión de superusuario expirada por inactividad');
+            }, 3600000); // 1 hora en milisegundos
+            
+            // 5. Redirigir a la vista principal
+            accesoContainer.classList.add('hidden');
+            mainContainer.classList.remove('hidden');
+            mostrarSeccion('rifas');
+            
+            console.log('Superusuario autenticado:', userCredential.user.uid);
+        }
         
-        // Configurar timeout para desactivar superusuario después de 1 hora
-        if (superusuarioTimeout) clearTimeout(superusuarioTimeout);
-        superusuarioTimeout = setTimeout(() => {
-            superusuarioActivo = false;
-            document.getElementById('btn-seguridad').classList.add('hidden');
-            alert('El acceso de superusuario ha expirado.');
-        }, 3600000); // 1 hora en milisegundos
+    } catch (error) {
+        // Manejo detallado de errores
+        console.error('Error en autenticación:', error);
         
-        accesoContainer.classList.add('hidden');
-        mainContainer.classList.remove('hidden');
-        mostrarSeccion('rifas');
-    } else {
-        alert('Clave incorrecta');
+        let mensajeError = '';
+        switch (error.code) {
+            case 'auth/wrong-password':
+                mensajeError = 'Clave incorrecta';
+                break;
+            case 'auth/user-not-found':
+                mensajeError = 'Usuario no registrado';
+                break;
+            case 'auth/network-request-failed':
+                mensajeError = 'Error de conexión a internet';
+                break;
+            default:
+                mensajeError = 'Error al autenticar: ' + error.message;
+        }
+        
+        alert(mensajeError);
+        
+        // Limpiar campo de contraseña
+        document.getElementById('superusuario-clave').value = '';
     }
 }
 
