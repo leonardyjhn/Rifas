@@ -189,7 +189,10 @@ function guardarNuevoNombre() {
 }
 
 async function validarAcceso() {
+    console.log("Función validarAcceso ejecutándose"); // Mensaje de depuración
+    
     const codigo = codigoAccesoInput.value.trim();
+    console.log("Código ingresado:", codigo); // Mensaje de depuración
     
     if (codigo.length !== 8) {
         alert('El código debe tener exactamente 8 dígitos');
@@ -197,8 +200,11 @@ async function validarAcceso() {
     }
     
     // Verificar si el código ya fue usado localmente
-    const codigosUsados = JSON.parse(localStorage.getItem('rifasSucre_codigos') || []);
+    const codigosUsados = JSON.parse(localStorage.getItem('rifasSucre_codigos') || "[]");
+    console.log("Códigos usados localmente:", codigosUsados); // Mensaje de depuración
+    
     if (codigosUsados.includes(codigo)) {
+        console.log("Código encontrado en almacenamiento local"); // Mensaje de depuración
         accesoContainer.classList.add('hidden');
         mainContainer.classList.remove('hidden');
         mostrarSeccion('rifas');
@@ -207,6 +213,7 @@ async function validarAcceso() {
     
     // Verificar si es modo prueba activo y válido
     if (modoPrueba && calcularDiasRestantesPrueba() > 0) {
+        console.log("Modo prueba activo"); // Mensaje de depuración
         accesoContainer.classList.add('hidden');
         mainContainer.classList.remove('hidden');
         mostrarSeccion('rifas');
@@ -215,20 +222,29 @@ async function validarAcceso() {
     
     // Verificar si el superusuario está activo
     if (superusuarioActivo) {
+        console.log("Superusuario activo"); // Mensaje de depuración
         accesoContainer.classList.add('hidden');
         mainContainer.classList.remove('hidden');
         mostrarSeccion('rifas');
         return;
     }
     
+    console.log("Validando código con Firebase..."); // Mensaje de depuración
     // Verificar el código en Firebase
     const codigoValido = await verificarCodigo(codigo);
+    console.log("Resultado de verificación:", codigoValido); // Mensaje de depuración
     
     if (codigoValido) {
+        console.log("Acceso concedido"); // Mensaje de depuración
         accesoContainer.classList.add('hidden');
         mainContainer.classList.remove('hidden');
         mostrarSeccion('rifas');
+        
+        // Guardar el código como usado localmente
+        codigosUsados.push(codigo);
+        localStorage.setItem('rifasSucre_codigos', JSON.stringify(codigosUsados));
     } else {
+        console.log("Acceso denegado"); // Mensaje de depuración
         alert('Código inválido o expirado. El período de prueba ha terminado. Por favor, adquiere un código de acceso.');
     }
 }
