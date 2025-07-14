@@ -235,38 +235,55 @@ async function validarAcceso() {
 
 // Función para verificar si un código es válido (sincronizado con Firebase)
 async function verificarCodigo(codigo) {
-    // Primero verificar en localStorage (códigos generados localmente)
-    const codigosLocales = JSON.parse(localStorage.getItem('rifasSucre_codigosValidos') || "[]");
-    const codigoLocal = codigosLocales.find(c => c.codigo === codigo);
-    
-    if (codigoLocal) {
-        const expirado = new Date(codigoLocal.expiracion) < new Date();
-        if (!expirado) {
-            return true;
-        }
+    // 1. Verificar formato del código
+    if (!codigo || codigo.length !== 8 || isNaN(codigo)) {
+        console.log("Código inválido: debe ser 8 dígitos numéricos");
+        return false;
     }
-    
-    // Si no está localmente o está expirado, verificar en Firebase
+
+    // 2. Verificar en Firebase
     try {
-        const querySnapshot = await db.collection("codigos")
+        const snapshot = await db.collection("codigos")
             .where("codigo", "==", codigo)
-            .where("expiracion", ">", new Date().toISOString())
-            .where("usado", "==", false)
             .limit(1)
             .get();
 
-        if (querySnapshot.empty) return false;
+        if (snapshot.empty) {
+            console.log("Código no existe en Firebase");
+            return false;
+        }
 
-        const doc = querySnapshot.docs[0];
+        const doc = snapshot.docs[0];
+        const data = doc.data();
+
+        // 3. Verificar expiración
+        const ahora = new Date();
+        const expiracion = new Date(data.expiracion);
+        
+        if (ahora > expiracion) {
+            console.log("Código expirado");
+            return false;
+        }
+
+        // 4. Verificar si ya fue usado
+        if (data.usado) {
+            console.log("Código ya fue usado");
+            return false;
+        }
+
+        // 5. Marcar como usado
         await db.collection("codigos").doc(doc.id).update({
             usado: true,
             dispositivo: obtenerIdDispositivo(),
-            fechaUso: new Date().toISOString()
+            fechaUso: ahora.toISOString()
         });
 
+        console.log("Código válido y registrado");
         return true;
+
     } catch (error) {
-        console.error("Error verificando código:", error);
+        console.error("Error al verificar código:", error);
+        alert("Error de conexión. Intenta nuevamente.");
         return false;
     }
 }
