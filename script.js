@@ -2,7 +2,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyBfiL057BQQf0vpcN1LoLGnlyktfvsNHiw",
   authDomain: "rifasleosoc.firebaseapp.com",
   projectId: "rifasleosoc",
-  storageBucket: "rifasleosoc.firebasestorage.app",
+  storageBucket: "rifasleosoc.appspot.com",
   messagingSenderId: "4575769760",
   appId: "1:4575769760:web:5530d10bf0cde3a55ec5c5"
 };
@@ -11,6 +11,16 @@ const firebaseConfig = {
 const app = firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
+
+// Configuración especial para desarrollo
+db.settings({
+  cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
+});
+
+db.enablePersistence()
+  .catch((err) => {
+      console.error("Error al habilitar persistencia:", err);
+  });
 
 // Variables globales
 let rifas = [];
@@ -208,124 +218,155 @@ function guardarNuevoNombre() {
 }
 
 async function validarAcceso() {
-    console.log("Función validarAcceso ejecutándose"); // Mensaje de depuración
+    console.log("[ValidarAcceso 1] Iniciando proceso de acceso");
     
     const codigo = codigoAccesoInput.value.trim();
-    console.log("Código ingresado:", codigo); // Mensaje de depuración
-    
-    if (codigo.length !== 8) {
+    console.log("[ValidarAcceso 2] Código ingresado:", codigo);
+
+    // 1. Validación básica
+    if (codigo.length !== 8 || !/^\d+$/.test(codigo)) {
         alert('El código debe tener exactamente 8 dígitos');
         return;
     }
-    
-    // Verificar si el código ya fue usado localmente
+
+    // 2. Verificar códigos usados localmente
     const codigosUsados = JSON.parse(localStorage.getItem('rifasSucre_codigos') || "[]");
-    console.log("Códigos usados localmente:", codigosUsados); // Mensaje de depuración
+    console.log("[ValidarAcceso 3] Códigos usados localmente:", codigosUsados);
     
     if (codigosUsados.includes(codigo)) {
-        console.log("Código encontrado en almacenamiento local"); // Mensaje de depuración
+        console.log("[ValidarAcceso 4] Código encontrado en almacenamiento local");
         accesoContainer.classList.add('hidden');
         mainContainer.classList.remove('hidden');
         mostrarSeccion('rifas');
         return;
     }
-    
-    // Verificar si es modo prueba activo y válido
+
+    // 3. Verificar modo prueba
     if (modoPrueba && calcularDiasRestantesPrueba() > 0) {
-        console.log("Modo prueba activo"); // Mensaje de depuración
+        console.log("[ValidarAcceso 5] Acceso por modo prueba");
         accesoContainer.classList.add('hidden');
         mainContainer.classList.remove('hidden');
         mostrarSeccion('rifas');
         return;
     }
-    
-    // Verificar si el superusuario está activo
+
+    // 4. Verificar superusuario
     if (superusuarioActivo) {
-        console.log("Superusuario activo"); // Mensaje de depuración
+        console.log("[ValidarAcceso 6] Acceso como superusuario");
         accesoContainer.classList.add('hidden');
         mainContainer.classList.remove('hidden');
         mostrarSeccion('rifas');
         return;
     }
-    
-    console.log("Validando código con Firebase..."); // Mensaje de depuración
-    // Verificar el código en Firebase
-    const codigoValido = await verificarCodigo(codigo);
-    console.log("Resultado de verificación:", codigoValido); // Mensaje de depuración
-    
-    if (codigoValido) {
-        console.log("Acceso concedido"); // Mensaje de depuración
-        accesoContainer.classList.add('hidden');
-        mainContainer.classList.remove('hidden');
-        mostrarSeccion('rifas');
+
+    // 5. Validar con Firebase
+    console.log("[ValidarAcceso 7] Validando con Firebase...");
+    try {
+        const codigoValido = await verificarCodigo(codigo);
+        console.log("[ValidarAcceso 8] Resultado de verificación:", codigoValido);
         
-        // Guardar el código como usado localmente
-        codigosUsados.push(codigo);
-        localStorage.setItem('rifasSucre_codigos', JSON.stringify(codigosUsados));
-    } else {
-        console.log("Acceso denegado"); // Mensaje de depuración
-        alert('Código inválido o expirado. El período de prueba ha terminado. Por favor, adquiere un código de acceso.');
+        if (codigoValido) {
+            console.log("[ValidarAcceso 9] Acceso concedido");
+            accesoContainer.classList.add('hidden');
+            mainContainer.classList.remove('hidden');
+            mostrarSeccion('rifas');
+        } else {
+            console.log("[ValidarAcceso 10] Acceso denegado");
+            alert('Código inválido o expirado. Por favor, adquiere un nuevo código de acceso.');
+        }
+    } catch (error) {
+        console.error("[ValidarAcceso ERROR]", error);
+        alert("Ocurrió un error inesperado. Por favor intenta nuevamente.");
     }
 }
 
 // Función para verificar si un código es válido (sincronizado con Firebase)
 async function verificarCodigo(codigo) {
-    codigo = codigo.toString().trim();
+    console.log("[1] Iniciando verificación de código:", codigo);
     
-    // Validación básica
-    if (codigo.length !== 8 || !/^\d+$/.test(codigo)) {
-        alert("❌ El código debe tener exactamente 8 dígitos");
-        return false;
-    }
-
     try {
-        // Buscar en Firebase
-        const query = await db.collection("codigos")
+        // 1. Validación básica del formato
+        if (typeof codigo !== 'string') codigo = codigo.toString();
+        codigo = codigo.trim();
+        
+        if (codigo.length !== 8 || !/^\d+$/.test(codigo)) {
+            console.log("[2] Formato de código inválido");
+            return false;
+        }
+
+        console.log("[3] Buscando código en Firestore...");
+        
+        // 2. Buscar el código en Firestore
+        const querySnapshot = await db.collection("codigos")
             .where("codigo", "==", codigo)
             .limit(1)
             .get();
 
-        if (query.empty) {
-            alert("❌ Código no encontrado");
+        if (querySnapshot.empty) {
+            console.log("[4] Código no encontrado en Firestore");
             return false;
         }
 
-        const doc = query.docs[0];
-        const data = doc.data();
+        const doc = querySnapshot.docs[0];
+        const codigoData = doc.data();
+        console.log("[5] Datos del código:", codigoData);
 
-        // Verificar expiración
-        if (new Date() > new Date(data.expiracion)) {
-            alert("⚠️ Código expirado");
+        // 3. Verificar expiración
+        const ahora = new Date();
+        const fechaExpiracion = new Date(codigoData.expiracion);
+        
+        if (ahora > fechaExpiracion) {
+            console.log("[6] Código expirado");
             return false;
         }
 
-        // Verificar uso previo
-        if (data.usado) {
-            alert("⚠️ Este código ya fue utilizado");
+        // 4. Verificar si ya fue usado
+        if (codigoData.usado) {
+            console.log("[7] Código ya usado");
             return false;
         }
 
-        // Obtener ID único del dispositivo
-        const dispositivoId = obtenerIdDispositivo();
+        // 5. Obtener ID único del dispositivo
+        let dispositivoId = localStorage.getItem('deviceId');
+        if (!dispositivoId) {
+            dispositivoId = 'd-' + Math.random().toString(36).substr(2, 9);
+            localStorage.setItem('deviceId', dispositivoId);
+        }
+        console.log("[8] ID del dispositivo:", dispositivoId);
 
-        // Actualizar como usado
+        // 6. Actualizar el código como usado
+        console.log("[9] Marcando código como usado...");
         await db.collection("codigos").doc(doc.id).update({
             usado: true,
             dispositivo: dispositivoId,
-            fechaUso: new Date().toISOString()
+            fechaUso: ahora.toISOString()
         });
 
-        // Guardar localmente
-        const codigosUsados = JSON.parse(localStorage.getItem('codigosUsados') || []);
-        codigosUsados.push(codigo);
-        localStorage.setItem('codigosUsados', JSON.stringify(codigosUsados));
+        // 7. Guardar localmente para futuros accesos
+        const codigosUsados = JSON.parse(localStorage.getItem('rifasSucre_codigos') || "[]");
+        if (!codigosUsados.includes(codigo)) {
+            codigosUsados.push(codigo);
+            localStorage.setItem('rifasSucre_codigos', JSON.stringify(codigosUsados));
+        }
+        console.log("[10] Código guardado localmente");
 
-        alert("✅ Código válido. Acceso concedido");
+        console.log("[11] ¡Verificación exitosa!");
         return true;
 
     } catch (error) {
-        console.error("Error en verificación:", error);
-        alert("🔴 Error de conexión. Intenta nuevamente");
+        console.error("[ERROR] Detalles del error:", {
+            message: error.message,
+            code: error.code,
+            stack: error.stack
+        });
+
+        // Manejo específico de errores conocidos
+        if (error.code === 'unavailable' || error.code === 'network-error') {
+            alert("🔴 Error de conexión. Verifica tu acceso a internet e intenta nuevamente.");
+        } else {
+            alert("🔴 Error al verificar el código: " + (error.message || "Por favor intenta más tarde"));
+        }
+        
         return false;
     }
 }
