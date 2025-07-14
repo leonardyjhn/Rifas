@@ -65,18 +65,37 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Función para iniciar Firebase y sincronizar códigos
 function iniciarFirebase() {
+    console.log("Inicializando Firebase...");
+    
+    // Verificar si Firebase ya está inicializado
+    if (!firebase.apps.length) {
+        console.log("Configurando Firebase por primera vez");
+        firebase.initializeApp(firebaseConfig);
+    }
+
+    // Probar la conexión a Firestore
+    db.collection("codigos").get()
+        .then(() => console.log("Conexión a Firestore exitosa"))
+        .catch(error => console.error("Error conectando a Firestore:", error));
+
     // Escuchar cambios en la colección de códigos
-    db.collection("codigos").onSnapshot((snapshot) => {
-        codigosFirebase = [];
-        snapshot.forEach((doc) => {
-            codigosFirebase.push(doc.data());
-        });
-        
-        // Si estamos en la sección de seguridad, actualizarla
-        if (!seguridadSection.classList.contains('hidden')) {
-            mostrarSeguridad();
+    db.collection("codigos").onSnapshot(
+        (snapshot) => {
+            console.log("Datos recibidos de Firestore");
+            codigosFirebase = [];
+            snapshot.forEach((doc) => {
+                codigosFirebase.push(doc.data());
+            });
+            
+            if (!seguridadSection.classList.contains('hidden')) {
+                mostrarSeguridad();
+            }
+        },
+        (error) => {
+            console.error("Error en la suscripción a Firestore:", error);
+            alert("Error de conexión con la base de datos. Intenta recargar la página.");
         }
-    });
+    );
 }
 
 function cargarDatos() {
