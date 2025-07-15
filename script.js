@@ -32,6 +32,7 @@ let modoPrueba = false;
 let fechaInicioPrueba = null;
 let filtroClientes = 'todos';
 let codigosFirebase = []; // Para almacenar códigos sincronizados
+let codigosUsados = [];
 
 // Elementos del DOM
 const accesoContainer = document.getElementById('acceso-container');
@@ -118,16 +119,16 @@ function cargarDatos() {
     
     // Cargar datos del localStorage
     const rifasGuardadas = localStorage.getItem('rifasSucre_rifas');
-    const clientesGuardados = localStorage.getItem('rifasSucre_clientes');
-    const codigosGuardados = localStorage.getItem('rifasSucre_codigos');
-    const plantillaGuardada = localStorage.getItem('rifasSucre_plantilla');
-    const pruebaGuardada = localStorage.getItem('rifasSucre_prueba');
-    const codigosValidosGuardados = localStorage.getItem('rifasSucre_codigosValidos');
-    
-    if (rifasGuardadas) rifas = JSON.parse(rifasGuardadas);
-    if (clientesGuardados) clientes = JSON.parse(clientesGuardados);
-    if (codigosGuardados) codigosUsados = JSON.parse(codigosGuardados);
-    if (codigosValidosGuardados) localStorage.setItem('rifasSucre_codigosValidos', codigosValidosGuardados);
+const clientesGuardados = localStorage.getItem('rifasSucre_clientes');
+const codigosGuardados = localStorage.getItem('rifasSucre_codigos');
+const plantillaGuardada = localStorage.getItem('rifasSucre_plantilla');
+const pruebaGuardada = localStorage.getItem('rifasSucre_prueba');
+const codigosValidosGuardados = localStorage.getItem('rifasSucre_codigosValidos');
+
+if (rifasGuardadas) rifas = JSON.parse(rifasGuardadas);
+if (clientesGuardados) clientes = JSON.parse(clientesGuardados);
+if (codigosGuardados) codigosUsados = JSON.parse(codigosGuardados); // Esta línea cambia
+if (codigosValidosGuardados) localStorage.setItem('rifasSucre_codigosValidos', codigosValidosGuardados);
     
     // Cargar plantilla por defecto si no existe
     if (!plantillaGuardada) {
