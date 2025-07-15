@@ -1198,11 +1198,28 @@ function actualizarListaClientes() {
         clienteAcciones.className = 'cliente-acciones';
         
         const btnWhatsApp = document.createElement('button');
-        btnWhatsApp.innerHTML = '<i class="fab fa-whatsapp"></i> WhatsApp';
-        btnWhatsApp.addEventListener('click', (e) => {
-            e.stopPropagation();
-            enviarWhatsApp(cliente);
-        });
+btnWhatsApp.innerHTML = '<i class="fab fa-whatsapp"></i> WhatsApp';
+btnWhatsApp.addEventListener('click', (e) => {
+    e.stopPropagation();
+    enviarWhatsApp(cliente);
+});
+
+// Nuevo botón Rezagados (solo si tiene números apartados)
+const tieneApartados = cliente.numeros.split(',').some(num => {
+    const estado = num.includes(':') ? num.split(':')[1] : cliente.estado;
+    return estado === 'apartado';
+});
+
+if (tieneApartados) {
+    const btnRezagados = document.createElement('button');
+    btnRezagados.innerHTML = '<i class="fas fa-exclamation-circle"></i> Rezagados';
+    btnRezagados.style.backgroundColor = '#e67e22'; // Color naranja
+    btnRezagados.addEventListener('click', (e) => {
+        e.stopPropagation();
+        enviarRezagados(cliente);
+    });
+    clienteAcciones.appendChild(btnRezagados);
+}
         
         const btnTicket = document.createElement('button');
         btnTicket.innerHTML = '<i class="fas fa-ticket-alt"></i> Ticket';
@@ -1239,6 +1256,7 @@ function actualizarListaClientes() {
         listaClientes.appendChild(clienteItem);
     });
 }
+
 
 function filtrarClientes() {
     const busqueda = document.getElementById('buscador-clientes').value.toLowerCase();
@@ -1704,12 +1722,58 @@ function generarTicket(cliente) {
     });
 }
 
-function mostrarModalPlantilla() {
-    const plantilla = localStorage.getItem('rifasSucre_plantilla') || '';
-    document.getElementById('plantilla-mensaje').value = plantilla;
+function enviarRezagados(cliente) {
+    const rifa = rifas.find(r => r.id === cliente.rifaId);
+    const plantilla = localStorage.getItem('rifasSucre_plantilla_rezagados') || 
+                     localStorage.getItem('rifasSucre_plantilla') || 
+                     '¡Hola {nombre}! Recordatorio: Tus números {numeros} en la rifa "{rifa}" están como {estado}. Por favor completa tu pago. ¡Gracias!';
     
-    document.getElementById('btn-guardar-plantilla').onclick = guardarPlantilla;
+    // Limpiar los números para mostrar (quitar los estados)
+    const numerosLimpios = cliente.numeros.split(',').map(num => {
+        return num.includes(':') ? num.split(':')[0] : num;
+    }).join(', ');
+    
+    let mensaje = plantilla
+        .replace(/{nombre}/g, cliente.nombre)
+        .replace(/{rifa}/g, rifa.nombre)
+        .replace(/{numeros}/g, numerosLimpios)
+        .replace(/{estado}/g, cliente.estado);
+    
+    const url = `https://wa.me/${cliente.telefono}?text=${encodeURIComponent(mensaje)}`;
+    window.open(url, '_blank');
+}
+
+function mostrarModalPlantilla() {
+    // Cargar plantillas
+    const plantillaWhatsApp = localStorage.getItem('rifasSucre_plantilla') || '';
+    const plantillaRezagados = localStorage.getItem('rifasSucre_plantilla_rezagados') || plantillaWhatsApp;
+    
+    document.getElementById('plantilla-mensaje').value = plantillaWhatsApp;
+    document.getElementById('plantilla-rezagados').value = plantillaRezagados;
+    
+    // Configurar eventos de pestañas
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            
+            this.classList.add('active');
+            document.getElementById(`${this.dataset.tab}-tab`).classList.add('active');
+        });
+    });
+    
+    document.getElementById('btn-guardar-plantilla').onclick = guardarPlantillas;
     plantillaModal.classList.remove('hidden');
+}
+
+function guardarPlantillas() {
+    const plantillaWhatsApp = document.getElementById('plantilla-mensaje').value;
+    const plantillaRezagados = document.getElementById('plantilla-rezagados').value;
+    
+    localStorage.setItem('rifasSucre_plantilla', plantillaWhatsApp);
+    localStorage.setItem('rifasSucre_plantilla_rezagados', plantillaRezagados);
+    plantillaModal.classList.add('hidden');
+    alert('Plantillas guardadas correctamente');
 }
 
 function guardarPlantilla() {

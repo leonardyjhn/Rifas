@@ -128,14 +128,31 @@
     </div>
 
     <!-- Modal de Mensaje Plantilla -->
-    <div id="plantilla-modal" class="modal hidden">
-        <div class="modal-content">
-            <span class="close-modal">&times;</span>
-            <h2>Plantilla de Mensaje</h2>
-            <textarea id="plantilla-mensaje" rows="10"></textarea>
-            <button id="btn-guardar-plantilla">Guardar Plantilla</button>
+<div id="plantilla-modal" class="modal hidden">
+    <div class="modal-content">
+        <span class="close-modal">&times;</span>
+        <h2>Plantillas de Mensaje</h2>
+        
+        <div class="tab-container">
+            <div class="tab-buttons">
+                <button class="tab-btn active" data-tab="whatsapp">WhatsApp</button>
+                <button class="tab-btn" data-tab="rezagados">Rezagados</button>
+            </div>
+            
+            <div class="tab-content active" id="whatsapp-tab">
+                <h3>Plantilla WhatsApp</h3>
+                <textarea id="plantilla-mensaje" rows="10"></textarea>
+            </div>
+            
+            <div class="tab-content" id="rezagados-tab">
+                <h3>Plantilla Rezagados</h3>
+                <textarea id="plantilla-rezagados" rows="10"></textarea>
+            </div>
         </div>
+        
+        <button id="btn-guardar-plantilla">Guardar Plantillas</button>
     </div>
+</div>
 
     <!-- Modal de Rifa -->
     <div id="rifa-modal" class="modal hidden">
