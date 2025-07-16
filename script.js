@@ -404,7 +404,7 @@ function activarPrueba() {
     mainContainer.classList.remove('hidden');
     mostrarSeccion('rifas');
     
-    alert('Modo prueba activado por 15 días. ¡Disfruta de la aplicación!');
+    alert('Modo prueba activado por 7 días. ¡Disfruta de la aplicación!');
 }
 
 function verificarPrueba() {
@@ -428,7 +428,7 @@ function calcularDiasRestantesPrueba() {
     
     const hoy = new Date();
     const finPrueba = new Date(fechaInicioPrueba);
-    finPrueba.setDate(finPrueba.getDate() + 15);
+    finPrueba.setDate(finPrueba.getDate() + 7);
     
     const diffTime = finPrueba - hoy;
     const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
