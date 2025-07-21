@@ -1167,59 +1167,66 @@ function actualizarListaClientes() {
         const clienteNumeros = document.createElement('div');
         clienteNumeros.className = 'cliente-numeros';
 
-        cliente.numeros.split(',').forEach(numCompleto => {
-            const [num, estadoIndividual] = numCompleto.includes(':') ? 
-                numCompleto.split(':') : 
-                [numCompleto, cliente.estado];
-            
-            const numElement = document.createElement('div');
-            numElement.className = `cliente-numero-rifa ${estadoIndividual}`;
-            numElement.textContent = num;
-            
-            numElement.style.cssText = `
-                cursor: pointer;
-                display: inline-block;
-                margin: 2px;
-                padding: 2px 5px;
-                border-radius: 3px;
-                border: 1px solid #ddd;
-            `;
-            
-            numElement.addEventListener('click', (e) => {
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                mostrarMenuNumeros(e, num, cliente);
+        // Ordenar los números numéricamente antes de mostrarlos
+        cliente.numeros.split(',')
+            .sort((a, b) => {
+                const numA = parseInt(a.includes(':') ? a.split(':')[0] : a);
+                const numB = parseInt(b.includes(':') ? b.split(':')[0] : b);
+                return numA - numB;
+            })
+            .forEach(numCompleto => {
+                const [num, estadoIndividual] = numCompleto.includes(':') ? 
+                    numCompleto.split(':') : 
+                    [numCompleto, cliente.estado];
+                
+                const numElement = document.createElement('div');
+                numElement.className = `cliente-numero-rifa ${estadoIndividual}`;
+                numElement.textContent = num;
+                
+                numElement.style.cssText = `
+                    cursor: pointer;
+                    display: inline-block;
+                    margin: 2px;
+                    padding: 2px 5px;
+                    border-radius: 3px;
+                    border: 1px solid #ddd;
+                `;
+                
+                numElement.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    mostrarMenuNumeros(e, num, cliente);
+                });
+                
+                clienteNumeros.appendChild(numElement);
             });
-            
-            clienteNumeros.appendChild(numElement);
-        });
         
         const clienteAcciones = document.createElement('div');
         clienteAcciones.className = 'cliente-acciones';
         
         const btnWhatsApp = document.createElement('button');
-btnWhatsApp.innerHTML = '<i class="fab fa-whatsapp"></i> WhatsApp';
-btnWhatsApp.addEventListener('click', (e) => {
-    e.stopPropagation();
-    enviarWhatsApp(cliente);
-});
+        btnWhatsApp.innerHTML = '<i class="fab fa-whatsapp"></i> WhatsApp';
+        btnWhatsApp.addEventListener('click', (e) => {
+            e.stopPropagation();
+            enviarWhatsApp(cliente);
+        });
 
-// Nuevo botón Rezagados (solo si tiene números apartados)
-const tieneApartados = cliente.numeros.split(',').some(num => {
-    const estado = num.includes(':') ? num.split(':')[1] : cliente.estado;
-    return estado === 'apartado';
-});
+        // Nuevo botón Rezagados (solo si tiene números apartados)
+        const tieneApartados = cliente.numeros.split(',').some(num => {
+            const estado = num.includes(':') ? num.split(':')[1] : cliente.estado;
+            return estado === 'apartado';
+        });
 
-if (tieneApartados) {
-    const btnRezagados = document.createElement('button');
-    btnRezagados.innerHTML = '<i class="fas fa-exclamation-circle"></i> Rezagados';
-    btnRezagados.style.backgroundColor = '#e67e22'; // Color naranja
-    btnRezagados.addEventListener('click', (e) => {
-        e.stopPropagation();
-        enviarRezagados(cliente);
-    });
-    clienteAcciones.appendChild(btnRezagados);
-}
+        if (tieneApartados) {
+            const btnRezagados = document.createElement('button');
+            btnRezagados.innerHTML = '<i class="fas fa-exclamation-circle"></i> Rezagados';
+            btnRezagados.style.backgroundColor = '#e67e22'; // Color naranja
+            btnRezagados.addEventListener('click', (e) => {
+                e.stopPropagation();
+                enviarRezagados(cliente);
+            });
+            clienteAcciones.appendChild(btnRezagados);
+        }
         
         const btnTicket = document.createElement('button');
         btnTicket.innerHTML = '<i class="fas fa-ticket-alt"></i> Ticket';
@@ -1318,7 +1325,13 @@ function guardarNuevoCliente() {
         return;
     }
     
-    const numerosArray = numeros.split(',').map(n => n.trim());
+    // Eliminar duplicados y espacios
+    const numerosArray = [...new Set(numeros.split(',').map(n => n.trim()))];
+    
+    if (numerosArray.length !== numeros.split(',').length) {
+        alert('Has ingresado números duplicados. Se han eliminado los repetidos.');
+    }
+    
     const rifa = rifas.find(r => r.id === rifaActiva);
     
     for (const num of numerosArray) {
@@ -1402,12 +1415,15 @@ function guardarClienteEditado(id) {
     const clienteIndex = clientes.findIndex(c => c.id === id);
     if (clienteIndex === -1) return;
     
-    // Limpiar los números quitando cualquier estado que puedan tener
-    const numerosArray = numerosInput.split(',').map(n => {
+    // Limpiar los números quitando cualquier estado que puedan tener y eliminar duplicados
+    const numerosArray = [...new Set(numerosInput.split(',').map(n => {
         const num = n.trim();
-        // Si el número tiene formato "010:apartado", solo tomar la parte del número
         return num.includes(':') ? num.split(':')[0] : num;
-    });
+    }))];
+    
+    if (numerosArray.length !== numerosInput.split(',').length) {
+        alert('Has ingresado números duplicados. Se han eliminado los repetidos.');
+    }
     
     const rifa = rifas.find(r => r.id === clientes[clienteIndex].rifaId);
     
