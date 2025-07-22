@@ -946,3 +946,38 @@ button i {
 .tab-content.active {
     display: block;
 }
+
+/* Estilos para paginación */
+.paginacion {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    margin-top: 20px;
+    padding: 15px 0;
+}
+
+.paginacion button {
+    padding: 8px 15px;
+    min-width: 40px;
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.3s;
+}
+
+.paginacion button:disabled {
+    background-color: #bdc3c7;
+    cursor: not-allowed;
+}
+
+.paginacion button:hover:not(:disabled) {
+    background-color: #2980b9;
+}
+
+.paginacion span {
+    font-size: 14px;
+    color: #7f8c8d;
+}
