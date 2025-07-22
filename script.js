@@ -33,7 +33,8 @@ let fechaInicioPrueba = null;
 let filtroClientes = 'todos';
 let codigosFirebase = []; // Para almacenar códigos sincronizados
 let codigosUsados = [];
-
+let paginaActualClientes = 1;
+const clientesPorPagina = 10;
 // Elementos del DOM
 const accesoContainer = document.getElementById('acceso-container');
 const mainContainer = document.getElementById('main-container');
@@ -1069,7 +1070,7 @@ function mostrarClientes() {
     `;
     clientesSection.appendChild(header);
     
-    // Nuevo: Filtros para clientes
+    // Filtros para clientes
     const filtrosContainer = document.createElement('div');
     filtrosContainer.className = 'filtros-clientes';
     filtrosContainer.innerHTML = `
@@ -1088,6 +1089,7 @@ function mostrarClientes() {
     // Configurar eventos de los filtros
     document.querySelectorAll('.filtro-cliente-btn').forEach(btn => {
         btn.addEventListener('click', function() {
+            paginaActualClientes = 1; // Resetear a primera página al cambiar filtro
             filtroClientes = this.dataset.filtro;
             document.querySelectorAll('.filtro-cliente-btn').forEach(b => b.classList.remove('active'));
             this.classList.add('active');
@@ -1106,6 +1108,11 @@ function mostrarClientes() {
     listaClientes.className = 'clientes-lista';
     clientesSection.appendChild(listaClientes);
     
+    // Controles de paginación
+    const paginacionContainer = document.createElement('div');
+    paginacionContainer.className = 'paginacion';
+    clientesSection.appendChild(paginacionContainer);
+    
     document.getElementById('btn-nuevo-cliente').addEventListener('click', mostrarModalNuevoCliente);
     document.getElementById('btn-plantilla-mensaje').addEventListener('click', mostrarModalPlantilla);
     document.getElementById('btn-plantilla-ticket').addEventListener('click', mostrarModalPlantillaTicket);
@@ -1118,7 +1125,9 @@ function actualizarListaClientes() {
     if (!rifaActiva) return;
     
     const listaClientes = document.querySelector('.clientes-lista');
+    const paginacionContainer = document.querySelector('.paginacion');
     listaClientes.innerHTML = '';
+    paginacionContainer.innerHTML = '';
     
     let clientesRifa = clientes
         .filter(c => c.rifaId === rifaActiva)
@@ -1144,124 +1153,51 @@ function actualizarListaClientes() {
         });
     }
     
-    if (clientesRifa.length === 0) {
+    // Calcular paginación
+    const totalClientes = clientesRifa.length;
+    const totalPaginas = Math.ceil(totalClientes / clientesPorPagina);
+    const inicio = (paginaActualClientes - 1) * clientesPorPagina;
+    const fin = inicio + clientesPorPagina;
+    const clientesPagina = clientesRifa.slice(inicio, fin);
+    
+    if (clientesPagina.length === 0) {
         listaClientes.innerHTML = '<p>No hay clientes registrados para esta rifa.</p>';
-        return;
+    } else {
+        clientesPagina.forEach(cliente => {
+            const clienteItem = crearElementoCliente(cliente);
+            listaClientes.appendChild(clienteItem);
+        });
     }
     
-    clientesRifa.forEach(cliente => {
-        const clienteItem = document.createElement('div');
-        clienteItem.className = 'cliente-item';
-        
-        const clienteHeader = document.createElement('div');
-        clienteHeader.className = 'cliente-header';
-        clienteHeader.innerHTML = `
-            <span class="cliente-numero">${cliente.numeroCliente}</span>
-            <span class="cliente-telefono">${cliente.telefono}</span>
-        `;
-        
-        const clienteNombre = document.createElement('div');
-        clienteNombre.className = 'cliente-nombre';
-        clienteNombre.textContent = cliente.nombre;
-        
-        const clienteNumeros = document.createElement('div');
-        clienteNumeros.className = 'cliente-numeros';
-
-        // Ordenar los números numéricamente antes de mostrarlos
-        cliente.numeros.split(',')
-            .sort((a, b) => {
-                const numA = parseInt(a.includes(':') ? a.split(':')[0] : a);
-                const numB = parseInt(b.includes(':') ? b.split(':')[0] : b);
-                return numA - numB;
-            })
-            .forEach(numCompleto => {
-                const [num, estadoIndividual] = numCompleto.includes(':') ? 
-                    numCompleto.split(':') : 
-                    [numCompleto, cliente.estado];
-                
-                const numElement = document.createElement('div');
-                numElement.className = `cliente-numero-rifa ${estadoIndividual}`;
-                numElement.textContent = num;
-                
-                numElement.style.cssText = `
-                    cursor: pointer;
-                    display: inline-block;
-                    margin: 2px;
-                    padding: 2px 5px;
-                    border-radius: 3px;
-                    border: 1px solid #ddd;
-                `;
-                
-                numElement.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopImmediatePropagation();
-                    mostrarMenuNumeros(e, num, cliente);
-                });
-                
-                clienteNumeros.appendChild(numElement);
-            });
-        
-        const clienteAcciones = document.createElement('div');
-        clienteAcciones.className = 'cliente-acciones';
-        
-        const btnWhatsApp = document.createElement('button');
-        btnWhatsApp.innerHTML = '<i class="fab fa-whatsapp"></i> WhatsApp';
-        btnWhatsApp.addEventListener('click', (e) => {
-            e.stopPropagation();
-            enviarWhatsApp(cliente);
-        });
-
-        // Nuevo botón Rezagados (solo si tiene números apartados)
-        const tieneApartados = cliente.numeros.split(',').some(num => {
-            const estado = num.includes(':') ? num.split(':')[1] : cliente.estado;
-            return estado === 'apartado';
-        });
-
-        if (tieneApartados) {
-            const btnRezagados = document.createElement('button');
-            btnRezagados.innerHTML = '<i class="fas fa-exclamation-circle"></i> Rezagados';
-            btnRezagados.style.backgroundColor = '#e67e22'; // Color naranja
-            btnRezagados.addEventListener('click', (e) => {
-                e.stopPropagation();
-                enviarRezagados(cliente);
-            });
-            clienteAcciones.appendChild(btnRezagados);
-        }
-        
-        const btnTicket = document.createElement('button');
-        btnTicket.innerHTML = '<i class="fas fa-ticket-alt"></i> Ticket';
-        btnTicket.addEventListener('click', (e) => {
-            e.stopPropagation();
-            generarTicket(cliente);
+    // Mostrar controles de paginación si hay más de una página
+    if (totalPaginas > 1) {
+        const btnAnterior = document.createElement('button');
+        btnAnterior.innerHTML = '<i class="fas fa-chevron-left"></i>';
+        btnAnterior.disabled = paginaActualClientes === 1;
+        btnAnterior.addEventListener('click', () => {
+            if (paginaActualClientes > 1) {
+                paginaActualClientes--;
+                actualizarListaClientes();
+            }
         });
         
-        const btnEditar = document.createElement('button');
-        btnEditar.innerHTML = '<i class="fas fa-edit"></i> Editar';
-        btnEditar.addEventListener('click', (e) => {
-            e.stopPropagation();
-            mostrarModalEditarCliente(cliente);
+        const paginaInfo = document.createElement('span');
+        paginaInfo.textContent = `Página ${paginaActualClientes} de ${totalPaginas}`;
+        
+        const btnSiguiente = document.createElement('button');
+        btnSiguiente.innerHTML = '<i class="fas fa-chevron-right"></i>';
+        btnSiguiente.disabled = paginaActualClientes === totalPaginas;
+        btnSiguiente.addEventListener('click', () => {
+            if (paginaActualClientes < totalPaginas) {
+                paginaActualClientes++;
+                actualizarListaClientes();
+            }
         });
         
-        const btnEliminar = document.createElement('button');
-        btnEliminar.innerHTML = '<i class="fas fa-trash"></i> Eliminar';
-        btnEliminar.style.backgroundColor = '#e74c3c';
-        btnEliminar.addEventListener('click', (e) => {
-            e.stopPropagation();
-            confirmarEliminarCliente(cliente.id);
-        });
-        
-        clienteAcciones.appendChild(btnWhatsApp);
-        clienteAcciones.appendChild(btnTicket);
-        clienteAcciones.appendChild(btnEditar);
-        clienteAcciones.appendChild(btnEliminar);
-        
-        clienteItem.appendChild(clienteHeader);
-        clienteItem.appendChild(clienteNombre);
-        clienteItem.appendChild(clienteNumeros);
-        clienteItem.appendChild(clienteAcciones);
-        
-        listaClientes.appendChild(clienteItem);
-    });
+        paginacionContainer.appendChild(btnAnterior);
+        paginacionContainer.appendChild(paginaInfo);
+        paginacionContainer.appendChild(btnSiguiente);
+    }
 }
 
 
@@ -2080,4 +2016,117 @@ function salir() {
     accesoContainer.classList.remove('hidden');
     codigoAccesoInput.value = '';
     codigoAccesoInput.focus();
+}
+
+function crearElementoCliente(cliente) {
+    const clienteItem = document.createElement('div');
+    clienteItem.className = 'cliente-item';
+    
+    const clienteHeader = document.createElement('div');
+    clienteHeader.className = 'cliente-header';
+    clienteHeader.innerHTML = `
+        <span class="cliente-numero">${cliente.numeroCliente}</span>
+        <span class="cliente-telefono">${cliente.telefono}</span>
+    `;
+    
+    const clienteNombre = document.createElement('div');
+    clienteNombre.className = 'cliente-nombre';
+    clienteNombre.textContent = cliente.nombre;
+    
+    const clienteNumeros = document.createElement('div');
+    clienteNumeros.className = 'cliente-numeros';
+
+    // Ordenar los números numéricamente antes de mostrarlos
+    cliente.numeros.split(',')
+        .sort((a, b) => {
+            const numA = parseInt(a.includes(':') ? a.split(':')[0] : a);
+            const numB = parseInt(b.includes(':') ? b.split(':')[0] : b);
+            return numA - numB;
+        })
+        .forEach(numCompleto => {
+            const [num, estadoIndividual] = numCompleto.includes(':') ? 
+                numCompleto.split(':') : 
+                [numCompleto, cliente.estado];
+            
+            const numElement = document.createElement('div');
+            numElement.className = `cliente-numero-rifa ${estadoIndividual}`;
+            numElement.textContent = num;
+            
+            numElement.style.cssText = `
+                cursor: pointer;
+                display: inline-block;
+                margin: 2px;
+                padding: 2px 5px;
+                border-radius: 3px;
+                border: 1px solid #ddd;
+            `;
+            
+            numElement.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                mostrarMenuNumeros(e, num, cliente);
+            });
+            
+            clienteNumeros.appendChild(numElement);
+        });
+    
+    const clienteAcciones = document.createElement('div');
+    clienteAcciones.className = 'cliente-acciones';
+    
+    const btnWhatsApp = document.createElement('button');
+    btnWhatsApp.innerHTML = '<i class="fab fa-whatsapp"></i> WhatsApp';
+    btnWhatsApp.addEventListener('click', (e) => {
+        e.stopPropagation();
+        enviarWhatsApp(cliente);
+    });
+
+    const tieneApartados = cliente.numeros.split(',').some(num => {
+        const estado = num.includes(':') ? num.split(':')[1] : cliente.estado;
+        return estado === 'apartado';
+    });
+
+    if (tieneApartados) {
+        const btnRezagados = document.createElement('button');
+        btnRezagados.innerHTML = '<i class="fas fa-exclamation-circle"></i> Rezagados';
+        btnRezagados.style.backgroundColor = '#e67e22';
+        btnRezagados.addEventListener('click', (e) => {
+            e.stopPropagation();
+            enviarRezagados(cliente);
+        });
+        clienteAcciones.appendChild(btnRezagados);
+    }
+    
+    const btnTicket = document.createElement('button');
+    btnTicket.innerHTML = '<i class="fas fa-ticket-alt"></i> Ticket';
+    btnTicket.addEventListener('click', (e) => {
+        e.stopPropagation();
+        generarTicket(cliente);
+    });
+    
+    const btnEditar = document.createElement('button');
+    btnEditar.innerHTML = '<i class="fas fa-edit"></i> Editar';
+    btnEditar.addEventListener('click', (e) => {
+        e.stopPropagation();
+        mostrarModalEditarCliente(cliente);
+    });
+    
+    const btnEliminar = document.createElement('button');
+    btnEliminar.innerHTML = '<i class="fas fa-trash"></i> Eliminar';
+    btnEliminar.style.backgroundColor = '#e74c3c';
+    btnEliminar.addEventListener('click', (e) => {
+        e.stopPropagation();
+        confirmarEliminarCliente(cliente.id);
+    });
+    
+    clienteAcciones.appendChild(btnWhatsApp);
+    clienteAcciones.appendChild(btnTicket);
+    clienteAcciones.appendChild(btnEditar);
+    clienteAcciones.appendChild(btnEliminar);
+    
+    clienteItem.appendChild(clienteHeader);
+    clienteItem.appendChild(clienteNombre);
+    clienteItem.appendChild(clienteNumeros);
+    clienteItem.appendChild(clienteAcciones);
+    
+    return clienteItem;
 }
