@@ -607,17 +607,21 @@ function mostrarRifas() {
         
         // Calcular números disponibles, apartados y pagados
         const clientesRifa = clientes.filter(c => c.rifaId === rifa.id);
-        let apartados = 0;
-        let pagados = 0;
+let apartados = 0;
+let pagados = 0;
+
+clientesRifa.forEach(cliente => {
+    cliente.numeros.split(',').forEach(numCompleto => {
+        // Obtener el estado individual del número si lo tiene, sino usar el estado general del cliente
+        const estado = numCompleto.includes(':') ? numCompleto.split(':')[1] : cliente.estado;
         
-        clientesRifa.forEach(cliente => {
-            const numerosCount = cliente.numeros.split(',').length;
-            if (cliente.estado === 'apartado') {
-                apartados += numerosCount;
-            } else if (cliente.estado === 'pagado') {
-                pagados += numerosCount;
-            }
-        });
+        if (estado === 'apartado') {
+            apartados++;
+        } else if (estado === 'pagado') {
+            pagados++;
+        }
+    });
+});
         
         const disponibles = rifa.totalNumeros - apartados - pagados;
         
