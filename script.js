@@ -1,40 +1,432 @@
-const firebaseConfig = {
-  apiKey: "AIzaSyBfiL057BQQf0vpcN1LoLGnlyktfvsNHiw",
-  authDomain: "rifasleosoc.firebaseapp.com",
-  projectId: "rifasleosoc",
-  storageBucket: "rifasleosoc.appspot.com",
-  messagingSenderId: "4575769760",
-  appId: "1:4575769760:web:5530d10bf0cde3a55ec5c5"
-};
 
-// Inicializar Firebase
-const app = firebase.initializeApp(firebaseConfig);
-const db = firebase.firestore();
-const auth = firebase.auth();
 
-// Configuración especial para desarrollo
-db.settings({
-  cacheSizeBytes: firebase.firestore.CACHE_SIZE_UNLIMITED
-});
 
-db.enablePersistence()
-  .catch((err) => {
-      console.error("Error al habilitar persistencia:", err);
-  });
+
+// Configuración de IndexedDB
+const DB_NAME = 'RifasSucreDB';
+const DB_VERSION = 4; // Incrementa cuando hagas cambios
+let db;
+
+function initDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        
+        request.onerror = (event) => {
+            console.error('Error al abrir la base de datos:', event.target.error);
+            reject('Error al abrir la base de datos');
+        };
+        
+        request.onsuccess = (event) => {
+            db = event.target.result;
+            
+            // Verificar si todos los object stores existen
+            const neededStores = ['rifas', 'clientes', 'codigos', 'configuracion'];
+            const missingStores = neededStores.filter(store => !db.objectStoreNames.contains(store));
+            
+            if (missingStores.length > 0) {
+                // Si faltan stores, forzar una actualización
+                db.close();
+                const newRequest = indexedDB.open(DB_NAME, DB_VERSION + 1);
+                
+                newRequest.onupgradeneeded = (event) => {
+                    const db = event.target.result;
+                    neededStores.forEach(store => {
+                        if (!db.objectStoreNames.contains(store)) {
+                            if (store === 'codigos') {
+                                const codigosStore = db.createObjectStore('codigos', { keyPath: 'codigo' });
+                                codigosStore.createIndex('expiracion', 'expiracion', { unique: false });
+                            } else if (store === 'clientes') {
+                                const clientesStore = db.createObjectStore('clientes', { keyPath: 'id' });
+                                clientesStore.createIndex('rifaId', 'rifaId', { unique: false });
+                            } else {
+                                db.createObjectStore(store, { keyPath: store === 'configuracion' ? 'clave' : 'id' });
+                            }
+                        }
+                    });
+                };
+                
+                newRequest.onsuccess = (event) => {
+                    db = event.target.result;
+                    console.log('Base de datos actualizada correctamente');
+                    resolve(db);
+                };
+                
+                newRequest.onerror = (event) => {
+                    console.error('Error al actualizar la base de datos:', event.target.error);
+                    reject(event.target.error);
+                };
+            } else {
+                console.log('Base de datos abierta correctamente');
+                resolve(db);
+            }
+        };
+        
+        request.onupgradeneeded = (event) => {
+            const db = event.target.result;
+            
+            if (!db.objectStoreNames.contains('rifas')) {
+                db.createObjectStore('rifas', { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains('clientes')) {
+                const clientesStore = db.createObjectStore('clientes', { keyPath: 'id' });
+                clientesStore.createIndex('rifaId', 'rifaId', { unique: false });
+            }
+            if (!db.objectStoreNames.contains('codigos')) {
+                const codigosStore = db.createObjectStore('codigos', { keyPath: 'codigo' });
+                codigosStore.createIndex('expiracion', 'expiracion', { unique: false });
+            }
+            if (!db.objectStoreNames.contains('configuracion')) {
+                db.createObjectStore('configuracion', { keyPath: 'clave' });
+            }
+        };
+    });
+}
+
+// Funciones genéricas para IndexedDB
+async function guardarDatos(storeName, data) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        
+        const request = store.put(data);
+        
+        request.onsuccess = () => resolve();
+        request.onerror = (event) => {
+            console.error(`Error al guardar en ${storeName}:`, event.target.error);
+            reject(event.target.error);
+        };
+    });
+}
+
+// Función mejorada para guardar rifas
+async function guardarRifasEnDB() {
+    try {
+        const tx = db.transaction('rifas', 'readwrite');
+        const store = tx.objectStore('rifas');
+        
+        // Limpiar store antes de guardar (evita duplicados)
+        await store.clear();
+        
+        // Guardar todas las rifas
+        await Promise.all(rifas.map(rifa => store.put(rifa)));
+        
+        console.log('Rifas guardadas en IndexedDB');
+        return true;
+    } catch (error) {
+        console.error('Error guardando rifas:', error);
+        // Fallback a localStorage
+        localStorage.setItem('rifasSucre_rifas', JSON.stringify(rifas));
+        return false;
+    }
+}
+
+// Función mejorada para guardar clientes
+async function guardarClientesEnDB() {
+    try {
+        const tx = db.transaction('clientes', 'readwrite');
+        const store = tx.objectStore('clientes');
+        
+        await store.clear();
+        await Promise.all(clientes.map(cliente => store.put(cliente)));
+        
+        console.log('Clientes guardados en IndexedDB');
+        return true;
+    } catch (error) {
+        console.error('Error guardando clientes:', error);
+        localStorage.setItem('rifasSucre_clientes', JSON.stringify(clientes));
+        return false;
+    }
+}
+
+// Función unificada para guardar todo
+async function guardarTodo() {
+    try {
+        const rifasOk = await guardarRifasEnDB();
+        const clientesOk = await guardarClientesEnDB();
+        
+        if (rifaActiva) {
+            await guardarConfiguracion('rifaActiva', rifaActiva);
+            localStorage.setItem('rifasSucre_rifaActiva', rifaActiva);
+        }
+        
+        return rifasOk && clientesOk;
+    } catch (error) {
+        console.error('Error en guardarTodo:', error);
+        return false;
+    }
+}
+
+function obtenerTodosDatos(storeName) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        const request = store.getAll();
+        
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = (event) => {
+            console.error(`Error al obtener datos de ${storeName}:`, event.target.error);
+            reject(event.target.error);
+        };
+    });
+}
+
+function eliminarDatos(storeName, id) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction([storeName], 'readwrite');
+        const store = transaction.objectStore(storeName);
+        
+        const request = store.delete(id);
+        
+        request.onsuccess = () => resolve();
+        request.onerror = (event) => {
+            console.error(`Error al eliminar de ${storeName}:`, event.target.error);
+            reject(event.target.error);
+        };
+    });
+}
+
+function obtenerConfiguracion(clave) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['configuracion'], 'readonly');
+        const store = transaction.objectStore('configuracion');
+        const request = store.get(clave);
+        
+        request.onsuccess = () => resolve(request.result ? request.result.valor : null);
+        request.onerror = (event) => {
+            console.error('Error al obtener configuración:', event.target.error);
+            reject(event.target.error);
+        };
+    });
+}
+
+function guardarConfiguracion(clave, valor) {
+    return new Promise((resolve, reject) => {
+        const transaction = db.transaction(['configuracion'], 'readwrite');
+        const store = transaction.objectStore('configuracion');
+        
+        const request = store.put({ clave, valor });
+        
+        request.onsuccess = () => resolve();
+        request.onerror = (event) => {
+            console.error('Error al guardar configuración:', event.target.error);
+            reject(event.target.error);
+        };
+    });
+}
+
+// Registrar Service Worker para PWA
+if ('serviceWorker' in navigator && (location.protocol === 'http:' || location.protocol === 'https:')) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+            .then(reg => console.log('SW registrado:', reg.scope))
+            .catch(err => console.log('SW no registrado (esto es normal en local):', err));
+    });
+} else {
+    console.warn('Service Worker no soportado en este entorno');
+}
+
+
 
 // Variables globales
 let rifas = [];
 let clientes = [];
 let rifaActiva = null;
+const plantillaFacturaModal = document.getElementById('plantilla-factura-modal');
 let superusuarioActivo = false;
 let superusuarioTimeout = null;
-let modoPrueba = false;
-let fechaInicioPrueba = null;
 let filtroClientes = 'todos';
-let codigosFirebase = []; // Para almacenar códigos sincronizados
-let codigosUsados = [];
 let paginaActualClientes = 1;
-const clientesPorPagina = 10;
+const clientesPorPagina = 10;let codigosValidos = JSON.parse(localStorage.getItem('codigosValidos') || "[]");
+let codigosUsados = JSON.parse(localStorage.getItem('codigosUsados') || "[]");
+
+// Configurar el manual de usuario
+const manualContent = `
+<h3>1. Introducción</h3>
+<p>Este sistema está diseñado para gestionar rifas, controlar la venta de números y mantener un registro organizado de clientes. Permite:</p>
+<ul>
+    <li>Registrar números vendidos, apartados o pagados.</li>
+    <li>Generar tickets y comprobantes de venta (sin validez tributaria).</li>
+    <li>Enviar mensajes automatizados a clientes vía WhatsApp.</li>
+    <li>Exportar datos para respaldo y análisis.</li>
+</ul>
+<p><strong>Nota importante:</strong><br>
+Los tickets, comprobantes o documentos generados por este sistema no son facturas legales y no tienen efectos tributarios. Son únicamente para control interno y registro de ventas.</p>
+
+<h3>2. Acceso al Sistema</h3>
+<p>Para ingresar, introduzca un código de acceso de 8 dígitos proporcionado por el administrador.</p>
+
+<h3>3. Menú Principal</h3>
+<p>El sistema cuenta con las siguientes secciones:</p>
+<ul>
+    <li><strong>Rifas:</strong> Gestión de todas las rifas activas.</li>
+    <li><strong>Clientes:</strong> Registro de participantes y sus números comprados.</li>
+    <li><strong>Respaldo:</strong> Opciones para guardar o recuperar datos.</li>
+    <li><strong>Clientes Permanentes:</strong> Base de datos de clientes frecuentes.</li>
+</ul>
+
+<h3>4. Gestión de Rifas</h3>
+<h4>Crear una nueva rifa</h4>
+<ol>
+    <li>Haga clic en "Nueva Rifa".</li>
+    <li>Complete los datos:
+        <ul>
+            <li>Nombre de la rifa (ejemplo: "Rifa Navideña 2024").</li>
+            <li>Total de números (ejemplo: 100).</li>
+            <li>Columnas por grilla (organización visual).</li>
+            <li>Números por grilla (ejemplo: 25 se dividirá en 4 ya que es de 100 el total en este caso).</li>
+            <li>Precio por número (ejemplo: $10).</li>
+        </ul>
+    </li>
+</ol>
+
+<h4>Acciones disponibles por rifa</h4>
+<ul>
+    <li>✅ <strong>Activar/Desactivar:</strong> Seleccione qué rifa está actualmente en venta.</li>
+    <li>🔢 <strong>Ver cuadrícula:</strong> Visualice todos los números (disponibles, apartados o pagados).</li>
+    <li>✏️ <strong>Editar:</strong> Modifique los datos de la rifa.</li>
+    <li>🗑️ <strong>Eliminar:</strong> Borre la rifa (se eliminarán también los clientes asociados).</li>
+    <li>📊 <strong>Generar CSV:</strong> Exporte un listado de números con su estado (útil para Excel).</li>
+</ul>
+
+<h3>5. Gestión de Clientes</h3>
+<h4>Agregar un nuevo cliente</h4>
+<ol>
+    <li>Seleccione una rifa activa.</li>
+    <li>Haga clic en "Nuevo Cliente".</li>
+    <li>Complete los datos:
+        <ul>
+            <li>Nombre.</li>
+            <li>Teléfono (para contacto por WhatsApp).</li>
+            <li>Números comprados (puede usar rangos como "001-005" o separar por comas: "001,005,010").</li>
+            <li>Estado (Apartado o Pagado).</li>
+        </ul>
+    </li>
+</ol>
+
+<h4>Acciones por cliente</h4>
+<ul>
+    <li>📲 <strong>WhatsApp:</strong> Envíe un mensaje automático con sus números y estado.</li>
+    <li>🎫 <strong>Ticket:</strong> Genere un comprobante para enviar al cliente (sin validez fiscal).</li>
+    <li>✏️ <strong>Editar:</strong> Modifique datos del cliente (nombre, teléfono o números).</li>
+    <li>🔄 <strong>Alternar estado:</strong> Cambie todos sus números a Pagado o Apartado en un solo paso.</li>
+</ul>
+
+<h4>Gestión de números individuales</h4>
+<p>Haga clic en cualquier número para:</p>
+<ul>
+    <li>Cambiar su estado (de Apartado a Pagado o viceversa).</li>
+    <li>Eliminarlo del cliente.</li>
+</ul>
+
+<h3>6. Clientes Permanentes</h3>
+<p>Base de datos para guardar información de clientes frecuentes y reutilizarla en futuras rifas.</p>
+
+<h4>Funciones disponibles</h4>
+<ul>
+    <li><strong>Agregar existentes:</strong> Al registrar un cliente nuevo, busque en la base para evitar duplicados.</li>
+    <li><strong>Editar información:</strong> Actualice nombres o teléfonos.</li>
+    <li><strong>Exportar/Importar:</strong> Guarde la lista en CSV o cargue datos desde un archivo.</li>
+</ul>
+
+<h3>7. Plantillas y Personalización</h3>
+<h4>Mensajes para WhatsApp</h4>
+<ul>
+    <li><strong>Mensaje estándar:</strong> Texto que se envía al cliente al asignar números.</li>
+    <li><strong>Recordatorio para rezagados:</strong> Mensaje para clientes con pagos pendientes.</li>
+</ul>
+
+<h4>Diseño de Tickets</h4>
+<p>Personalice el formato de los tickets que se envían a los clientes (no es un documento fiscal).</p>
+
+<h4>Configuración de impresión</h4>
+<p>Ajuste el ancho (58mm o 80mm) y tamaño de fuente para comprobantes impresos.</p>
+
+<h3>8. Respaldo de Datos</h3>
+<ul>
+    <li><strong>Crear respaldo:</strong> Guarde toda la información en un archivo seguro.</li>
+    <li><strong>Restaurar:</strong> Recupere datos desde una copia anterior en caso de pérdida.</li>
+</ul>
+
+<h3>9. Consejos Rápidos</h3>
+<ul>
+    <li>✔ <strong>Use rangos para números:</strong> "001-010" equivale a 10 números seguidos.</li>
+    <li>✔ <strong>Busque clientes antes de registrar:</strong> Evite duplicados en la base de datos.</li>
+    <li>✔ <strong>Exporte respaldos regularmente:</strong> Prevenga pérdida de información.</li>
+    <li>✔ <strong>Filtros útiles:</strong> Encuentre rápidamente números disponibles o clientes con pagos pendientes.</li>
+</ul>
+
+<h3>10. Soporte</h3>
+<p>Para problemas técnicos, contacte al administrador del sistema.</p>
+
+<p><strong>Nota final:</strong><br>
+Este sistema es una herramienta de gestión interna. Los tickets generados no sustituyen facturas legales y no tienen validez fiscal.</p>
+`;
+
+// Configurar evento para mostrar el manual
+document.getElementById('btn-manual').addEventListener('click', function() {
+    document.getElementById('manual-content').innerHTML = manualContent;
+    document.getElementById('manual-modal').classList.remove('hidden');
+});
+
+async function initPersistentStorage() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        
+        request.onupgradeneeded = (event) => {
+            const db = event.target.result;
+            
+            // Crear todos los object stores necesarios si no existen
+            if (!db.objectStoreNames.contains('config')) {
+                db.createObjectStore('config', { keyPath: 'key' });
+            }
+            if (!db.objectStoreNames.contains('codigos')) {
+                const codigosStore = db.createObjectStore('codigos', { keyPath: 'codigo' });
+                codigosStore.createIndex('expiracion', 'expiracion', { unique: false });
+            }
+            if (!db.objectStoreNames.contains('rifas')) {
+                db.createObjectStore('rifas', { keyPath: 'id' });
+            }
+            if (!db.objectStoreNames.contains('clientes')) {
+                const clientesStore = db.createObjectStore('clientes', { keyPath: 'id' });
+                clientesStore.createIndex('rifaId', 'rifaId', { unique: false });
+                clientesStore.createIndex('nombre', 'nombre', { unique: false });
+            }
+            if (!db.objectStoreNames.contains('configuracion')) {
+                db.createObjectStore('configuracion', { keyPath: 'clave' });
+            }
+            
+            console.log("Estructura de IndexedDB actualizada");
+        };
+        
+        request.onsuccess = (event) => {
+            db = event.target.result;
+            console.log("IndexedDB iniciado correctamente");
+            resolve(db);
+        };
+        
+        request.onerror = (event) => {
+            console.error("Error al abrir IndexedDB:", event.target.error);
+            reject(event.target.error);
+        };
+    });
+}
+
+async function migrarDatosLocales() {
+    // Migrar solo si existe data vieja
+    if (localStorage.getItem('codigosValidos')) {
+        const codigosLocal = JSON.parse(localStorage.getItem('codigosValidos') || "[]");
+        const tx = db.transaction('codigos', 'readwrite');
+        
+        await Promise.all(
+            codigosLocal.map(codigo => 
+                tx.objectStore('codigos').put(codigo)
+            )
+        );
+        
+        localStorage.removeItem('codigosValidos');
+    }
+}
+
 // Elementos del DOM
 const accesoContainer = document.getElementById('acceso-container');
 const mainContainer = document.getElementById('main-container');
@@ -68,102 +460,212 @@ const seguridadModal = document.getElementById('seguridad-modal');
 const confirmacionModal = document.getElementById('confirmacion-modal');
 
 // Cargar datos al iniciar
-document.addEventListener('DOMContentLoaded', () => {
-    cargarDatos();
-    configurarEventos();
-    verificarPrueba();
-    iniciarFirebase();
+document.addEventListener('DOMContentLoaded', async () => {
+    try {
+        await initPersistentStorage();
+        await cargarDatos();
+        configurarEventos();
+        
+        // Verificar si ya tiene acceso
+        const tieneAcceso = await verificarAccesoPersistente();
+        if (tieneAcceso || superusuarioActivo) {
+            accesoContainer.classList.add('hidden');
+            mainContainer.classList.remove('hidden');
+            mostrarSeccion('rifas');
+        }
+    } catch (error) {
+        console.error('Error en inicialización:', error);
+        alert('Error al cargar la aplicación. Recarga la página.');
+    }
 });
 
-// Función para iniciar Firebase y sincronizar códigos
-function iniciarFirebase() {
-    console.log("Inicializando Firebase...");
-    
-    // Verificar si Firebase ya está inicializado
-    if (!firebase.apps.length) {
-        console.log("Configurando Firebase por primera vez");
-        firebase.initializeApp(firebaseConfig);
-    }
 
-    // Probar la conexión a Firestore
-    db.collection("codigos").get()
-        .then(() => console.log("Conexión a Firestore exitosa"))
-        .catch(error => console.error("Error conectando a Firestore:", error));
-
-    // Escuchar cambios en la colección de códigos
-    db.collection("codigos").onSnapshot(
-        (snapshot) => {
-            console.log("Datos recibidos de Firestore");
-            codigosFirebase = [];
-            snapshot.forEach((doc) => {
-                codigosFirebase.push(doc.data());
-            });
-            
-            if (!seguridadSection.classList.contains('hidden')) {
-                mostrarSeguridad();
-            }
-        },
-        (error) => {
-            console.error("Error en la suscripción a Firestore:", error);
-            alert("Error de conexión con la base de datos. Intenta recargar la página.");
+async function cargarDatos() {
+    try {
+        // Primero intentar con IndexedDB
+        const [rifasData, clientesData, nombreAppData] = await Promise.all([
+            obtenerTodosDatos('rifas'),
+            obtenerTodosDatos('clientes'),
+            obtenerConfiguracion('nombreApp')
+        ]);
+        
+        rifas = rifasData || [];
+        clientes = clientesData || [];
+        
+        // Cargar nombre de la app (primero IndexedDB, luego localStorage como fallback)
+        const nombreApp = nombreAppData || localStorage.getItem('nombreApp') || 'Rifas Sucre';
+        appTitle.textContent = nombreApp;
+        document.querySelector('#acceso-container h1').textContent = nombreApp;
+        
+        // Si no hay datos, intentar con localStorage
+        if (rifas.length === 0 && localStorage.getItem('rifasSucre_rifas')) {
+            rifas = JSON.parse(localStorage.getItem('rifasSucre_rifas'));
+            await guardarRifasEnDB(); // Migrar a IndexedDB
         }
-    );
+        
+        if (clientes.length === 0 && localStorage.getItem('rifasSucre_clientes')) {
+            clientes = JSON.parse(localStorage.getItem('rifasSucre_clientes'));
+            await guardarClientesEnDB(); // Migrar a IndexedDB
+        }
+        
+        // Cargar rifa activa
+        const rifaActivaData = await obtenerConfiguracion('rifaActiva');
+        rifaActiva = rifaActivaData || localStorage.getItem('rifasSucre_rifaActiva') || null;
+        
+        console.log('Datos cargados correctamente');
+    } catch (error) {
+        console.error('Error cargando datos:', error);
+        cargarFallbackLocalStorage();
+    }
 }
 
-function cargarDatos() {
-    // Cargar nombre de la app
-    const nombreGuardado = localStorage.getItem('nombreApp');
-    if (nombreGuardado) {
-        appTitle.textContent = nombreGuardado;
-        document.querySelector('#acceso-container h1').textContent = nombreGuardado;
+// Funciones auxiliares para manejo seguro de IndexedDB
+async function safeGetAll(storeName) {
+    try {
+        return await obtenerTodosDatos(storeName);
+    } catch (error) {
+        console.warn(`Error al obtener datos de ${storeName}:`, error);
+        return [];
     }
-    
-    // Cargar datos del localStorage
+}
+
+async function safeGetConfig(clave) {
+    try {
+        const transaction = db.transaction(['configuracion'], 'readonly');
+        const store = transaction.objectStore('configuracion');
+        const request = store.get(clave);
+        
+        return new Promise((resolve, reject) => {
+            request.onsuccess = () => resolve(request.result?.valor || null);
+            request.onerror = () => resolve(null);
+        });
+    } catch (error) {
+        console.warn(`Error al obtener configuración ${clave}:`, error);
+        return null;
+    }
+}
+
+function cargarFallbackLocalStorage() {
+    console.warn("Usando fallback a localStorage");
     const rifasGuardadas = localStorage.getItem('rifasSucre_rifas');
-const clientesGuardados = localStorage.getItem('rifasSucre_clientes');
-const codigosGuardados = localStorage.getItem('rifasSucre_codigos');
-const plantillaGuardada = localStorage.getItem('rifasSucre_plantilla');
-const pruebaGuardada = localStorage.getItem('rifasSucre_prueba');
-const codigosValidosGuardados = localStorage.getItem('rifasSucre_codigosValidos');
-
-if (rifasGuardadas) rifas = JSON.parse(rifasGuardadas);
-if (clientesGuardados) clientes = JSON.parse(clientesGuardados);
-if (codigosGuardados) codigosUsados = JSON.parse(codigosGuardados); // Esta línea cambia
-if (codigosValidosGuardados) localStorage.setItem('rifasSucre_codigosValidos', codigosValidosGuardados);
+    const clientesGuardados = localStorage.getItem('rifasSucre_clientes');
     
-    // Cargar plantilla por defecto si no existe
-    if (!plantillaGuardada) {
-        const plantillaDefault = `¡Hola {nombre}!
+    if (rifasGuardadas) rifas = JSON.parse(rifasGuardadas);
+    if (clientesGuardados) clientes = JSON.parse(clientesGuardados);
+}
 
-Gracias por participar en la rifa "{rifa}".
-Números asignados: {numeros}
-Estado: {estado}
-
-Por favor, completa tu pago si aún no lo has hecho. ¡Mucha suerte!`;
-        localStorage.setItem('rifasSucre_plantilla', plantillaDefault);
+async function guardarAcceso(codigo) {
+    try {
+        // Guardar en IndexedDB para persistencia
+        const tx = db.transaction(['configuracion'], 'readwrite');
+        const store = tx.objectStore('configuracion');
+        await store.put({ 
+            clave: 'ultimo_acceso', 
+            valor: codigo,
+            timestamp: new Date().toISOString()
+        });
+        
+        // Guardar también en sessionStorage para la sesión actual
+        sessionStorage.setItem('codigo_acceso_actual', codigo);
+    } catch (error) {
+        console.error("Error guardando acceso:", error);
+        // Fallback a localStorage
+        localStorage.setItem('ultimo_acceso', codigo);
     }
-    
-    // Cargar datos de prueba
-    if (pruebaGuardada) {
-        const pruebaData = JSON.parse(pruebaGuardada);
-        modoPrueba = true;
-        fechaInicioPrueba = new Date(pruebaData.fechaInicio);
+}
+
+async function verificarAccesoPersistente() {
+    try {
+        // 1. Intentar con IndexedDB primero
+        const tx = db.transaction(['configuracion'], 'readonly');
+        const store = tx.objectStore('configuracion');
+        const request = store.get('ultimo_acceso');
+        
+        const acceso = await new Promise((resolve) => {
+            request.onsuccess = () => resolve(request.result?.valor);
+            request.onerror = () => resolve(null);
+        });
+
+        if (acceso && await verificarCodigoEnDB(acceso)) {
+            return true;
+        }
+        
+        // 2. Fallback a localStorage
+        const codigoLocal = localStorage.getItem('ultimo_acceso');
+        return codigoLocal && await verificarCodigoEnDB(codigoLocal);
+    } catch (error) {
+        console.error("Error verificando acceso:", error);
+        return false;
     }
+}
+
+async function verificarCodigoEnDB(codigo) {
+    return new Promise((resolve) => {
+        const tx = db.transaction(['codigos'], 'readonly');
+        const store = tx.objectStore('codigos');
+        const request = store.get(codigo);
+
+        request.onsuccess = () => {
+            const codigoObj = request.result;
+            if (!codigoObj) {
+                console.log('Código no encontrado');
+                resolve(false);
+                return;
+            }
+
+            const ahora = new Date();
+            const expiracion = new Date(codigoObj.expiracion);
+            
+            if (ahora > expiracion) {
+                console.log('Código expirado');
+                resolve(false);
+                return;
+            }
+
+            console.log('Código válido');
+            resolve(true);
+        };
+
+        request.onerror = () => {
+            console.error('Error al verificar código');
+            resolve(false);
+        };
+    });
+}
+
+// Código de diagnóstico (puedes eliminarlo después)
+async function verificarCodigoGuardado(codigo) {
+    const tx = db.transaction(['codigos'], 'readonly');
+    const store = tx.objectStore('codigos');
+    const request = store.get(codigo);
     
-    // Mostrar pantalla de acceso
-    accesoContainer.classList.remove('hidden');
-    mainContainer.classList.add('hidden');
+    request.onsuccess = () => {
+        console.log('Resultado de búsqueda:', request.result);
+        if (!request.result) {
+            console.error('El código no existe en la base de datos');
+            console.log('Object stores disponibles:', db.objectStoreNames);
+        }
+    };
+    
+    request.onerror = (e) => {
+        console.error('Error al verificar:', e.target.error);
+    };
 }
 
 function configurarEventos() {
     // Acceso
     btnAcceder.addEventListener('click', validarAcceso);
-    btnPrueba.addEventListener('click', activarPrueba);
     btnSuperusuario.addEventListener('click', mostrarModalSuperusuario);
     btnContacto.addEventListener('click', () => {
         window.open('https://wa.me/584245244171', '_blank');
     });
     
+    // Manual de usuario
+    document.getElementById('btn-manual').addEventListener('click', function() {
+        document.getElementById('manual-content').innerHTML = manualContent;
+        document.getElementById('manual-modal').classList.remove('hidden');
+    });
+
     // Menú principal
     btnRifas.addEventListener('click', () => mostrarSeccion('rifas'));
     btnClientes.addEventListener('click', () => mostrarSeccion('clientes'));
@@ -171,7 +673,12 @@ function configurarEventos() {
     btnSeguridad.addEventListener('click', () => mostrarSeccion('seguridad'));
     btnSalir.addEventListener('click', salir);
     btnCambiarNombre.addEventListener('click', mostrarModalCambiarNombre);
+    document.getElementById('btn-guardar-nombre').addEventListener('click', guardarNuevoNombre);
     
+    document.getElementById('btn-guardar-plantilla-ticket').addEventListener('click', guardarPlantillaTicket);
+    document.getElementById('btn-plantilla-factura').addEventListener('click', mostrarModalPlantillaFactura);
+    document.getElementById('btn-guardar-plantilla-factura').addEventListener('click', guardarPlantillaFactura);
+
     // Modales
     document.querySelectorAll('.close-modal').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -190,15 +697,6 @@ function configurarEventos() {
     document.getElementById('superusuario-clave').addEventListener('keypress', (e) => {
         if (e.key === 'Enter') validarSuperusuario();
     });
-    
-    // Cambiar nombre
-    document.getElementById('btn-guardar-nombre').addEventListener('click', guardarNuevoNombre);
-    
-    // Seguridad
-    document.getElementById('btn-generar-codigo').addEventListener('click', generarCodigoAcceso);
-    
-    // Plantilla ticket
-    document.getElementById('btn-guardar-plantilla-ticket').addEventListener('click', guardarPlantillaTicket);
 }
 
 function mostrarModalCambiarNombre() {
@@ -206,172 +704,68 @@ function mostrarModalCambiarNombre() {
     nombreModal.classList.remove('hidden');
 }
 
-function guardarNuevoNombre() {
+async function guardarNuevoNombre() {
     const nuevoNombre = document.getElementById('nuevo-nombre').value.trim();
     if (!nuevoNombre) {
         alert('Por favor ingresa un nombre válido');
         return;
     }
     
-    localStorage.setItem('nombreApp', nuevoNombre);
-    appTitle.textContent = nuevoNombre;
-    nombreModal.classList.add('hidden');
-    document.querySelector('#acceso-container h1').textContent = nuevoNombre;
+    try {
+        // Guardar en localStorage (para compatibilidad)
+        localStorage.setItem('nombreApp', nuevoNombre);
+        
+        // Guardar en IndexedDB para persistencia
+        await guardarConfiguracion('nombreApp', nuevoNombre);
+        
+        // Actualizar la interfaz
+        appTitle.textContent = nuevoNombre;
+        document.querySelector('#acceso-container h1').textContent = nuevoNombre;
+        
+        nombreModal.classList.add('hidden');
+    } catch (error) {
+        console.error('Error al guardar el nombre:', error);
+        alert('Error al guardar el nombre. Intenta nuevamente.');
+    }
 }
 
+// ====== 5. VALIDACIÓN ACTUALIZADA ======
 async function validarAcceso() {
-    console.log("[ValidarAcceso 1] Iniciando proceso de acceso");
-    
     const codigo = codigoAccesoInput.value.trim();
-    console.log("[ValidarAcceso 2] Código ingresado:", codigo);
-
-    // 1. Validación básica
-    if (codigo.length !== 8 || !/^\d+$/.test(codigo)) {
-        alert('El código debe tener exactamente 8 dígitos');
-        return;
-    }
-
-    // 2. Verificar códigos usados localmente
-    const codigosUsados = JSON.parse(localStorage.getItem('rifasSucre_codigos') || "[]");
-    console.log("[ValidarAcceso 3] Códigos usados localmente:", codigosUsados);
     
-    if (codigosUsados.includes(codigo)) {
-        console.log("[ValidarAcceso 4] Código encontrado en almacenamiento local");
-        accesoContainer.classList.add('hidden');
-        mainContainer.classList.remove('hidden');
-        mostrarSeccion('rifas');
+    if (!codigo) {
+        alert('Ingrese un código de acceso');
         return;
     }
 
-    // 3. Verificar modo prueba
-    if (modoPrueba && calcularDiasRestantesPrueba() > 0) {
-        console.log("[ValidarAcceso 5] Acceso por modo prueba");
-        accesoContainer.classList.add('hidden');
-        mainContainer.classList.remove('hidden');
-        mostrarSeccion('rifas');
-        return;
-    }
-
-    // 4. Verificar superusuario
     if (superusuarioActivo) {
-        console.log("[ValidarAcceso 6] Acceso como superusuario");
         accesoContainer.classList.add('hidden');
         mainContainer.classList.remove('hidden');
         mostrarSeccion('rifas');
         return;
     }
 
-    // 5. Validar con Firebase
-    console.log("[ValidarAcceso 7] Validando con Firebase...");
     try {
-        const codigoValido = await verificarCodigo(codigo);
-        console.log("[ValidarAcceso 8] Resultado de verificación:", codigoValido);
+        const esValido = await verificarCodigoEnDB(codigo);
         
-        if (codigoValido) {
-            console.log("[ValidarAcceso 9] Acceso concedido");
+        if (esValido) {
+            // Guardar el acceso (sin marcar como usado)
+            await guardarAcceso(codigo);
+            
+            // Iniciar sesión
             accesoContainer.classList.add('hidden');
             mainContainer.classList.remove('hidden');
             mostrarSeccion('rifas');
         } else {
-            console.log("[ValidarAcceso 10] Acceso denegado");
-            alert('Código inválido o expirado. Por favor, adquiere un nuevo código de acceso.');
+            alert('Código inválido, expirado o ya utilizado');
         }
     } catch (error) {
-        console.error("[ValidarAcceso ERROR]", error);
-        alert("Ocurrió un error inesperado. Por favor intenta nuevamente.");
+        console.error('Error en validación:', error);
+        alert('Error al validar el código');
     }
 }
 
-// Función para verificar si un código es válido (sincronizado con Firebase)
-async function verificarCodigo(codigo) {
-    console.log("[1] Iniciando verificación de código:", codigo);
-    
-    try {
-        // 1. Validación básica del formato
-        if (typeof codigo !== 'string') codigo = codigo.toString();
-        codigo = codigo.trim();
-        
-        if (codigo.length !== 8 || !/^\d+$/.test(codigo)) {
-            console.log("[2] Formato de código inválido");
-            return false;
-        }
 
-        console.log("[3] Buscando código en Firestore...");
-        
-        // 2. Buscar el código en Firestore
-        const querySnapshot = await db.collection("codigos")
-            .where("codigo", "==", codigo)
-            .limit(1)
-            .get();
-
-        if (querySnapshot.empty) {
-            console.log("[4] Código no encontrado en Firestore");
-            return false;
-        }
-
-        const doc = querySnapshot.docs[0];
-        const codigoData = doc.data();
-        console.log("[5] Datos del código:", codigoData);
-
-        // 3. Verificar expiración
-        const ahora = new Date();
-        const fechaExpiracion = new Date(codigoData.expiracion);
-        
-        if (ahora > fechaExpiracion) {
-            console.log("[6] Código expirado");
-            return false;
-        }
-
-        // 4. Verificar si ya fue usado
-        if (codigoData.usado) {
-            console.log("[7] Código ya usado");
-            return false;
-        }
-
-        // 5. Obtener ID único del dispositivo
-        let dispositivoId = localStorage.getItem('deviceId');
-        if (!dispositivoId) {
-            dispositivoId = 'd-' + Math.random().toString(36).substr(2, 9);
-            localStorage.setItem('deviceId', dispositivoId);
-        }
-        console.log("[8] ID del dispositivo:", dispositivoId);
-
-        // 6. Actualizar el código como usado
-        console.log("[9] Marcando código como usado...");
-        await db.collection("codigos").doc(doc.id).update({
-            usado: true,
-            dispositivo: dispositivoId,
-            fechaUso: ahora.toISOString()
-        });
-
-        // 7. Guardar localmente para futuros accesos
-        const codigosUsados = JSON.parse(localStorage.getItem('rifasSucre_codigos') || "[]");
-        if (!codigosUsados.includes(codigo)) {
-            codigosUsados.push(codigo);
-            localStorage.setItem('rifasSucre_codigos', JSON.stringify(codigosUsados));
-        }
-        console.log("[10] Código guardado localmente");
-
-        console.log("[11] ¡Verificación exitosa!");
-        return true;
-
-    } catch (error) {
-        console.error("[ERROR] Detalles del error:", {
-            message: error.message,
-            code: error.code,
-            stack: error.stack
-        });
-
-        // Manejo específico de errores conocidos
-        if (error.code === 'unavailable' || error.code === 'network-error') {
-            alert("🔴 Error de conexión. Verifica tu acceso a internet e intenta nuevamente.");
-        } else {
-            alert("🔴 Error al verificar el código: " + (error.message || "Por favor intenta más tarde"));
-        }
-        
-        return false;
-    }
-}
 
 function obtenerIdDispositivo() {
     let id = localStorage.getItem('deviceId');
@@ -382,60 +776,6 @@ function obtenerIdDispositivo() {
     return id;
 }
 
-function activarPrueba() {
-    if (modoPrueba) {
-        const diasRestantes = calcularDiasRestantesPrueba();
-        if (diasRestantes > 0) {
-            accesoContainer.classList.add('hidden');
-            mainContainer.classList.remove('hidden');
-            mostrarSeccion('rifas');
-        }
-        alert(`Ya estás en modo prueba. Días restantes: ${diasRestantes}`);
-        return;
-    }
-    
-    modoPrueba = true;
-    fechaInicioPrueba = new Date();
-    
-    localStorage.setItem('rifasSucre_prueba', JSON.stringify({
-        fechaInicio: fechaInicioPrueba
-    }));
-    
-    accesoContainer.classList.add('hidden');
-    mainContainer.classList.remove('hidden');
-    mostrarSeccion('rifas');
-    
-    alert('Modo prueba activado por 7 días. ¡Disfruta de la aplicación!');
-}
-
-function verificarPrueba() {
-    if (!modoPrueba) return;
-    
-    const diasRestantes = calcularDiasRestantesPrueba();
-    
-    if (diasRestantes <= 0) {
-        modoPrueba = false;
-        localStorage.removeItem('rifasSucre_prueba');
-        accesoContainer.classList.remove('hidden');
-        mainContainer.classList.add('hidden');
-        alert('El período de prueba ha terminado. Por favor, adquiere un código de acceso.');
-    } else if (diasRestantes <= 3) {
-        alert(`¡Atención! Tu prueba gratuita termina en ${diasRestantes} días.`);
-    }
-}
-
-function calcularDiasRestantesPrueba() {
-    if (!fechaInicioPrueba) return 0;
-    
-    const hoy = new Date();
-    const finPrueba = new Date(fechaInicioPrueba);
-    finPrueba.setDate(finPrueba.getDate() + 7);
-    
-    const diffTime = finPrueba - hoy;
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    return diffDays;
-}
 
 function mostrarModalSuperusuario() {
     superusuarioModal.classList.remove('hidden');
@@ -445,67 +785,27 @@ function mostrarModalSuperusuario() {
 
 async function validarSuperusuario() {
     const clave = document.getElementById('superusuario-clave').value.trim();
-    const superusuarioEmail = "leonardyjhn@gmail.com"; // Tu email registrado en Firebase
+    const CLAVE_SUPERUSUARIO = "Mkgothicp.01"; // Cambia esto por tu clave real
     
-    // Validar campo vacío
-    if (!clave) {
-        alert('Por favor ingresa la clave de superusuario');
-        return;
-    }
-
-    try {
-        // 1. Autenticar en Firebase
-        const userCredential = await auth.signInWithEmailAndPassword(
-            superusuarioEmail,
-            clave
-        );
+    if (clave === CLAVE_SUPERUSUARIO) {
+        superusuarioActivo = true;
+        superusuarioModal.classList.add('hidden');
         
-        // 2. Verificar autenticación exitosa
-        if (userCredential.user) {
-            superusuarioActivo = true;
-            superusuarioModal.classList.add('hidden');
-            
-            // 3. Mostrar botón de seguridad
-            document.getElementById('btn-seguridad').classList.remove('hidden');
-            
-            // 4. Configurar timeout de 1 hora
-            if (superusuarioTimeout) clearTimeout(superusuarioTimeout);
-            superusuarioTimeout = setTimeout(() => {
-                superusuarioActivo = false;
-                document.getElementById('btn-seguridad').classList.add('hidden');
-                alert('Sesión de superusuario expirada por inactividad');
-            }, 3600000); // 1 hora en milisegundos
-            
-            // 5. Redirigir a la vista principal
-            accesoContainer.classList.add('hidden');
-            mainContainer.classList.remove('hidden');
-            mostrarSeccion('rifas');
-            
-            console.log('Superusuario autenticado:', userCredential.user.uid);
-        }
+        // Configurar timeout de 1 hora
+        if (superusuarioTimeout) clearTimeout(superusuarioTimeout);
+        superusuarioTimeout = setTimeout(() => {
+            superusuarioActivo = false;
+            alert('Sesión de superusuario expirada');
+        }, 3600000);
         
-    } catch (error) {
-        // Manejo detallado de errores
-        console.error('Error en autenticación:', error);
+        // Redirigir
+        accesoContainer.classList.add('hidden');
+        mainContainer.classList.remove('hidden');
+        mostrarSeccion('seguridad');
         
-        let mensajeError = '';
-        switch (error.code) {
-            case 'auth/wrong-password':
-                mensajeError = 'Clave incorrecta';
-                break;
-            case 'auth/user-not-found':
-                mensajeError = 'Usuario no registrado';
-                break;
-            case 'auth/network-request-failed':
-                mensajeError = 'Error de conexión a internet';
-                break;
-            default:
-                mensajeError = 'Error al autenticar: ' + error.message;
-        }
-        
-        alert(mensajeError);
-        
-        // Limpiar campo de contraseña
+        console.log('Acceso como superusuario concedido');
+    } else {
+        alert('Clave de superusuario incorrecta');
         document.getElementById('superusuario-clave').value = '';
     }
 }
@@ -607,21 +907,20 @@ function mostrarRifas() {
         
         // Calcular números disponibles, apartados y pagados
         const clientesRifa = clientes.filter(c => c.rifaId === rifa.id);
-let apartados = 0;
-let pagados = 0;
+        let apartados = 0;
+        let pagados = 0;
 
-clientesRifa.forEach(cliente => {
-    cliente.numeros.split(',').forEach(numCompleto => {
-        // Obtener el estado individual del número si lo tiene, sino usar el estado general del cliente
-        const estado = numCompleto.includes(':') ? numCompleto.split(':')[1] : cliente.estado;
-        
-        if (estado === 'apartado') {
-            apartados++;
-        } else if (estado === 'pagado') {
-            pagados++;
-        }
-    });
-});
+        clientesRifa.forEach(cliente => {
+            cliente.numeros.split(',').forEach(numCompleto => {
+                const estado = numCompleto.includes(':') ? numCompleto.split(':')[1] : cliente.estado;
+                
+                if (estado === 'apartado') {
+                    apartados++;
+                } else if (estado === 'pagado') {
+                    pagados++;
+                }
+            });
+        });
         
         const disponibles = rifa.totalNumeros - apartados - pagados;
         
@@ -658,7 +957,14 @@ clientesRifa.forEach(cliente => {
         const btnEliminar = document.createElement('button');
         btnEliminar.textContent = 'Eliminar';
         btnEliminar.style.backgroundColor = '#e74c3c';
-        btnEliminar.addEventListener('click', () => confirmarEliminarRifa(rifa.id));
+        btnEliminar.addEventListener('click', (e) => {
+            e.stopPropagation();
+            mostrarConfirmacion(
+                'Eliminar Rifa',
+                `¿Estás seguro de que deseas eliminar la rifa "${rifa.nombre}"? Todos los clientes asociados también serán eliminados.`,
+                () => eliminarRifa(rifa.id)
+            );
+        });
         
         rifaAcciones.appendChild(btnActivar);
         rifaAcciones.appendChild(btnCuadricula);
@@ -693,16 +999,18 @@ function mostrarModalEditarRifa(rifa) {
     document.getElementById('rifa-total').value = rifa.totalNumeros;
     document.getElementById('rifa-columnas').value = rifa.columnas;
     document.getElementById('rifa-por-grilla').value = rifa.porGrilla;
+    document.getElementById('rifa-precio').value = rifa.precio || ''; // Nueva línea
     
     document.getElementById('btn-guardar-rifa').onclick = () => guardarRifaEditada(rifa.id);
     rifaModal.classList.remove('hidden');
 }
 
-function guardarNuevaRifa() {
+async function guardarNuevaRifa() {
     const nombre = document.getElementById('rifa-nombre').value.trim();
-    const total = parseInt(document.getElementById('rifa-total').value);
-    const columnas = parseInt(document.getElementById('rifa-columnas').value);
-    const porGrilla = parseInt(document.getElementById('rifa-por-grilla').value);
+const total = parseInt(document.getElementById('rifa-total').value);
+const columnas = parseInt(document.getElementById('rifa-columnas').value);
+const porGrilla = parseInt(document.getElementById('rifa-por-grilla').value);
+const precio = parseFloat(document.getElementById('rifa-precio').value) || 0;
     
     if (!nombre || isNaN(total) || isNaN(columnas) || isNaN(porGrilla)) {
         alert('Por favor completa todos los campos correctamente');
@@ -715,31 +1023,42 @@ function guardarNuevaRifa() {
     }
     
     const nuevaRifa = {
-        id: Date.now().toString(),
-        nombre,
-        totalNumeros: total,
-        columnas,
-        porGrilla,
-        fechaCreacion: new Date().toISOString()
-    };
+    id: Date.now().toString(),
+    nombre,
+    totalNumeros: total,
+    columnas,
+    porGrilla,
+    precio, // Nueva propiedad
+    fechaCreacion: new Date().toISOString()
+};
     
-    rifas.push(nuevaRifa);
-    guardarDatos();
-    rifaModal.classList.add('hidden');
-    mostrarRifas();
+    try {
+        await guardarDatos('rifas', nuevaRifa);
+        rifas.push(nuevaRifa);
+        await guardarTodo(); // <-- AÑADIR ESTA LÍNEA
+        rifaModal.classList.add('hidden');
+        mostrarRifas();
+    } catch (error) {
+        alert('Error al guardar la rifa. Intenta nuevamente.');
+    }
 }
 
-function guardarRifaEditada(id) {
+async function guardarRifaEditada(id) {
     const nombre = document.getElementById('rifa-nombre').value.trim();
     const total = parseInt(document.getElementById('rifa-total').value);
     const columnas = parseInt(document.getElementById('rifa-columnas').value);
     const porGrilla = parseInt(document.getElementById('rifa-por-grilla').value);
+    const precio = parseFloat(document.getElementById('rifa-precio').value) || 0;
     
-    if (!nombre || isNaN(total) || isNaN(columnas) || isNaN(porGrilla)) {
+    if (!nombre || isNaN(total) || isNaN(columnas) || isNaN(porGrilla) || isNaN(precio)) {
         alert('Por favor completa todos los campos correctamente');
         return;
     }
     
+    if (total <= 0 || columnas <= 0 || porGrilla <= 0 || precio < 0) {
+        alert('Los valores deben ser mayores a cero (el precio puede ser cero)');
+        return;
+    }
     if (total <= 0 || columnas <= 0 || porGrilla <= 0) {
         alert('Los valores deben ser mayores a cero');
         return;
@@ -751,52 +1070,58 @@ function guardarRifaEditada(id) {
         return;
     }
     
-    rifas[rifaIndex] = {
+    const rifaActualizada = {
         ...rifas[rifaIndex],
         nombre,
         totalNumeros: total,
         columnas,
-        porGrilla
+        porGrilla,
+        precio // Agregar esta línea
     };
     
-    guardarDatos();
-    rifaModal.classList.add('hidden');
-    mostrarRifas();
-}
-
-function confirmarEliminarRifa(id) {
-    const clientesAsociados = clientes.filter(c => c.rifaId === id);
-    
-    if (clientesAsociados.length > 0) {
-        mostrarConfirmacion(
-            'Eliminar Rifa',
-            'Esta rifa tiene clientes asociados. ¿Estás seguro de que deseas eliminarla? Esto también eliminará todos los clientes asociados.',
-            () => eliminarRifa(id)
-        );
-    } else {
-        mostrarConfirmacion(
-            'Eliminar Rifa',
-            '¿Estás seguro de que deseas eliminar esta rifa?',
-            () => eliminarRifa(id)
-        );
+    try {
+        await guardarDatos('rifas', rifaActualizada);
+        rifas[rifaIndex] = rifaActualizada;
+        await guardarTodo(); // <-- AÑADIR ESTA LÍNEA
+        rifaModal.classList.add('hidden');
+        mostrarRifas();
+    } catch (error) {
+        alert('Error al actualizar la rifa. Intenta nuevamente.');
     }
 }
 
-function eliminarRifa(id) {
-    rifas = rifas.filter(r => r.id !== id);
-    clientes = clientes.filter(c => c.rifaId !== id);
-    
-    if (rifaActiva === id) {
-        rifaActiva = null;
-        localStorage.removeItem('rifasSucre_rifaActiva');
+async function eliminarRifa(id) {
+    try {
+        // Eliminar clientes asociados primero
+        const clientesAsociados = clientes.filter(c => c.rifaId === id);
+        for (const cliente of clientesAsociados) {
+            await eliminarDatos('clientes', cliente.id);
+        }
+        
+        // Eliminar la rifa
+        await eliminarDatos('rifas', id);
+        
+        // Actualizar las listas locales
+        rifas = rifas.filter(r => r.id !== id);
+        clientes = clientes.filter(c => c.rifaId !== id);
+        
+        // Si la rifa eliminada era la activa, limpiar rifaActiva
+        if (rifaActiva === id) {
+            rifaActiva = null;
+            localStorage.removeItem('rifasSucre_rifaActiva');
+        }
+        
+        // Guardar cambios
+        await guardarTodo();
+        
+        // Actualizar la interfaz
+        mostrarRifas();
+        mostrarClientes();
+        actualizarInfoRifaActiva();
+    } catch (error) {
+        console.error('Error al eliminar la rifa:', error);
+        alert('Error al eliminar la rifa. Intenta nuevamente.');
     }
-    
-    guardarDatos();
-    mostrarRifas();
-    mostrarClientes();
-    actualizarInfoRifaActiva();
-    rifasSection.innerHTML = '';
-    mostrarRifas();
 }
 
 function mostrarCuadriculaCompleta(rifa) {
@@ -1249,7 +1574,7 @@ function mostrarModalEditarCliente(cliente) {
     clienteModal.classList.remove('hidden');
 }
 
-function guardarNuevoCliente() {
+async function guardarNuevoCliente() {
     if (!rifaActiva) {
         alert('No hay rifa seleccionada');
         return;
@@ -1257,23 +1582,72 @@ function guardarNuevoCliente() {
     
     const nombre = document.getElementById('cliente-nombre').value.trim();
     const telefono = document.getElementById('cliente-telefono').value.trim();
-    const numeros = document.getElementById('cliente-numeros').value.trim();
+    const numerosInput = document.getElementById('cliente-numeros').value.trim();
     const estado = document.getElementById('cliente-estado').value;
     
-    if (!nombre || !telefono || !numeros) {
+    if (!nombre || !telefono || !numerosInput) {
         alert('Por favor completa todos los campos');
         return;
     }
     
-    // Eliminar duplicados y espacios
-    const numerosArray = [...new Set(numeros.split(',').map(n => n.trim()))];
+    // Normalizar el número de teléfono (eliminar +, espacios, etc.)
+    const telefonoNormalizado = normalizarTelefono(telefono);
     
-    if (numerosArray.length !== numeros.split(',').length) {
-        alert('Has ingresado números duplicados. Se han eliminado los repetidos.');
+    // Verificar si ya existe un cliente con este número en CUALQUIER rifa
+    const clienteExistente = clientes.find(c => normalizarTelefono(c.telefono) === telefonoNormalizado);
+    
+    if (clienteExistente) {
+        alert(`Ya existe un cliente registrado con este número de teléfono:\n\n` +
+              `Nombre: ${clienteExistente.nombre}\n` +
+              `Teléfono: ${clienteExistente.telefono}\n` +
+              `Rifa: ${rifas.find(r => r.id === clienteExistente.rifaId)?.nombre || 'Desconocida'}`);
+        return;
+    }
+    
+    // Procesar números con diferentes separadores y rangos
+    const numerosProcesados = [];
+    
+    // Separar por comas, puntos o espacios
+    const partes = numerosInput.split(/[,.\s]+/);
+    
+    for (const parte of partes) {
+        if (!parte) continue;
+        
+        // Procesar rangos (ejemplo: 010-050)
+        if (parte.includes('-')) {
+            const [inicioStr, finStr] = parte.split('-');
+            const inicio = parseInt(inicioStr);
+            const fin = parseInt(finStr);
+            
+            if (isNaN(inicio) || isNaN(fin)) {
+                alert(`El rango "${parte}" no es válido`);
+                return;
+            }
+            
+            if (inicio > fin) {
+                alert(`El rango "${parte}" está invertido (el primer número debe ser menor)`);
+                return;
+            }
+            
+            for (let i = inicio; i <= fin; i++) {
+                numerosProcesados.push(i.toString());
+            }
+        } else {
+            numerosProcesados.push(parte);
+        }
+    }
+    
+    // Eliminar duplicados
+    const numerosArray = [...new Set(numerosProcesados)];
+    
+    if (numerosArray.length === 0) {
+        alert('No se han ingresado números válidos');
+        return;
     }
     
     const rifa = rifas.find(r => r.id === rifaActiva);
     
+    // Validar formato y rango de números
     for (const num of numerosArray) {
         if (isNaN(num) || num === '') {
             alert(`El número "${num}" no es válido`);
@@ -1287,12 +1661,13 @@ function guardarNuevoCliente() {
         }
     }
     
+    // Verificar disponibilidad de números
     const numerosOcupados = {};
     const clientesRifa = clientes.filter(c => c.rifaId === rifaActiva);
     
     clientesRifa.forEach(cliente => {
         cliente.numeros.split(',').forEach(num => {
-            const numFormateado = parseInt(num).toString().padStart(3, '0');
+            const numFormateado = parseInt(num.includes(':') ? num.split(':')[0] : num).toString().padStart(3, '0');
             numerosOcupados[numFormateado] = true;
         });
     });
@@ -1307,6 +1682,7 @@ function guardarNuevoCliente() {
         return;
     }
     
+    // Generar número de cliente único
     let numeroCliente = '';
     const numerosClientes = clientes.map(c => parseInt(c.numeroCliente.slice(1)));
     const maxNumero = numerosClientes.length > 0 ? Math.max(...numerosClientes) : 0;
@@ -1324,24 +1700,33 @@ function guardarNuevoCliente() {
         numeroCliente = `#${(maxNumero + 1).toString().padStart(3, '0')}`;
     }
     
+    // Crear nuevo cliente
     const nuevoCliente = {
         id: Date.now().toString(),
         rifaId: rifaActiva,
         numeroCliente,
         nombre,
-        telefono,
+        telefono, // Guardamos el teléfono original
         numeros: numerosArray.map(n => parseInt(n).toString().padStart(3, '0')).join(','),
         estado,
         fechaRegistro: new Date().toISOString()
     };
     
     clientes.push(nuevoCliente);
-    guardarDatos();
+    await guardarTodo();
     clienteModal.classList.add('hidden');
     actualizarListaClientes();
 }
 
-function guardarClienteEditado(id) {
+// Función para normalizar números de teléfono
+function normalizarTelefono(telefono) {
+    if (!telefono) return '';
+    
+    // Eliminar todo excepto números
+    return telefono.replace(/[^\d]/g, '');
+}
+
+async function guardarClienteEditado(id) {
     const nombre = document.getElementById('cliente-nombre').value.trim();
     const telefono = document.getElementById('cliente-telefono').value.trim();
     const numerosInput = document.getElementById('cliente-numeros').value.trim();
@@ -1355,8 +1740,60 @@ function guardarClienteEditado(id) {
     const clienteIndex = clientes.findIndex(c => c.id === id);
     if (clienteIndex === -1) return;
     
-    // Limpiar los números quitando cualquier estado que puedan tener y eliminar duplicados
-    const numerosArray = [...new Set(numerosInput.split(',').map(n => {
+    // Normalizar el número de teléfono
+    const telefonoNormalizado = normalizarTelefono(telefono);
+    const telefonoActualNormalizado = normalizarTelefono(clientes[clienteIndex].telefono);
+    
+    // Verificar si el nuevo número ya existe en OTRO cliente (no en el actual)
+    if (telefonoNormalizado !== telefonoActualNormalizado) {
+        const clienteExistente = clientes.find(c => 
+            c.id !== id && normalizarTelefono(c.telefono) === telefonoNormalizado
+        );
+        
+        if (clienteExistente) {
+            alert(`Ya existe otro cliente con este número de teléfono:\n\n` +
+                  `Nombre: ${clienteExistente.nombre}\n` +
+                  `Teléfono: ${clienteExistente.telefono}\n` +
+                  `Rifa: ${rifas.find(r => r.id === clienteExistente.rifaId)?.nombre || 'Desconocida'}`);
+            return;
+        }
+    }
+    
+    // Procesar números con diferentes separadores y rangos
+    const numerosProcesados = [];
+    
+    // Separar por comas, puntos o espacios
+    const partes = numerosInput.split(/[,.\s]+/);
+    
+    for (const parte of partes) {
+        if (!parte) continue;
+        
+        // Procesar rangos (ejemplo: 010-050)
+        if (parte.includes('-')) {
+            const [inicioStr, finStr] = parte.split('-');
+            const inicio = parseInt(inicioStr);
+            const fin = parseInt(finStr);
+            
+            if (isNaN(inicio) || isNaN(fin)) {
+                alert(`El rango "${parte}" no es válido`);
+                return;
+            }
+            
+            if (inicio > fin) {
+                alert(`El rango "${parte}" está invertido (el primer número debe ser menor)`);
+                return;
+            }
+            
+            for (let i = inicio; i <= fin; i++) {
+                numerosProcesados.push(i.toString());
+            }
+        } else {
+            numerosProcesados.push(parte);
+        }
+    }
+    
+    // Eliminar duplicados y limpiar estados existentes
+    const numerosArray = [...new Set(numerosProcesados.map(n => {
         const num = n.trim();
         return num.includes(':') ? num.split(':')[0] : num;
     }))];
@@ -1426,7 +1863,7 @@ function guardarClienteEditado(id) {
         estado
     };
     
-    guardarDatos();
+    await guardarTodo();
     clienteModal.classList.add('hidden');
     actualizarListaClientes();
 }
@@ -1505,22 +1942,22 @@ function mostrarMenuNumeros(event, numero, cliente) {
     }, 10);
 }
 
-function cambiarEstadoNumero(numero, cliente, nuevoEstado) {
+async function cambiarEstadoNumero(numero, cliente, nuevoEstado) {
     const nuevosNumeros = cliente.numeros.split(',').map(num => {
         const numActual = num.includes(':') ? num.split(':')[0] : num;
         return numActual === numero ? `${numero}:${nuevoEstado}` : num;
     });
 
     cliente.numeros = nuevosNumeros.join(',');
-    guardarDatos();
+    await guardarTodo(); // Ahora funciona correctamente
     actualizarListaClientes();
 }
 
-function eliminarNumero(numero, cliente) {
+async function eliminarNumero(numero, cliente) {
     mostrarConfirmacion(
         'Eliminar número',
         `¿Eliminar el número ${numero} de ${cliente.nombre}?`,
-        () => {
+        async () => {  // <-- Añadir async aquí
             const nuevosNumeros = cliente.numeros.split(',')
                 .filter(num => !num.startsWith(numero));
             
@@ -1530,7 +1967,7 @@ function eliminarNumero(numero, cliente) {
                 cliente.numeros = nuevosNumeros.join(',');
             }
             
-            guardarDatos();
+            await guardarTodo();  // 
             actualizarListaClientes();
         }
     );
@@ -1544,9 +1981,9 @@ function confirmarEliminarCliente(id) {
     );
 }
 
-function eliminarCliente(id) {
+async function eliminarCliente(id) {  // <-- Añade 'async' aquí
     clientes = clientes.filter(c => c.id !== id);
-    guardarDatos();
+    await guardarTodo();  // Ahora el await funciona correctamente
     actualizarListaClientes();
     mostrarRifas();
 }
@@ -1560,11 +1997,26 @@ function enviarWhatsApp(cliente) {
         return num.includes(':') ? num.split(':')[0] : num;
     }).join(', ');
     
+    // CALCULAR ESTADO GENERAL CORRECTO
+    let numerosPagados = 0;
+    let numerosApartados = 0;
+    const totalNumeros = cliente.numeros.split(',').length;
+    
+    cliente.numeros.split(',').forEach(numCompleto => {
+        const estado = numCompleto.includes(':') ? numCompleto.split(':')[1] : cliente.estado;
+        if (estado === 'pagado') numerosPagados++;
+        if (estado === 'apartado') numerosApartados++;
+    });
+    
+    let estadoGeneral = 'mixto';
+    if (numerosPagados === totalNumeros) estadoGeneral = 'pagado';
+    if (numerosApartados === totalNumeros) estadoGeneral = 'apartado';
+    
     let mensaje = plantilla
         .replace(/{nombre}/g, cliente.nombre)
         .replace(/{rifa}/g, rifa.nombre)
         .replace(/{numeros}/g, numerosLimpios)
-        .replace(/{estado}/g, cliente.estado);
+        .replace(/{estado}/g, estadoGeneral);  // ← ESTADO CORREGIDO
     
     const url = `https://wa.me/${cliente.telefono}?text=${encodeURIComponent(mensaje)}`;
     window.open(url, '_blank');
@@ -1588,10 +2040,18 @@ function generarTicket(cliente) {
         color: #333;
     `;
 
+    // CALCULAR ESTADOS INDIVIDUALES DE LOS NÚMEROS
+    let numerosPagados = 0;
+    let numerosApartados = 0;
+    
     const numerosHTML = cliente.numeros.split(',').map(numCompleto => {
         const [num, estadoIndividual] = numCompleto.includes(':') ? 
             numCompleto.split(':') : 
             [numCompleto, cliente.estado];
+            
+        // Contar números por estado
+        if (estadoIndividual === 'pagado') numerosPagados++;
+        if (estadoIndividual === 'apartado') numerosApartados++;
             
         return `<span style="display: inline-block; margin: 2px; padding: 2px 5px; 
                 border-radius: 3px; border: 1px solid #ddd; 
@@ -1603,20 +2063,37 @@ function generarTicket(cliente) {
 
     const tituloTicket = localStorage.getItem('plantillaTicketTitulo') || 'TICKET DE RIFA';
     let mensajeTicket = localStorage.getItem('plantillaTicketMensaje') || 
-        'Cliente: {nombre}\nTeléfono: {telefono}\nNúmeros: {numeros}\nEstado: {estado}\nFecha: {fecha}';
+        'Cliente: {nombre}\nTeléfono: {telefono}\nNúmeros: {numeros}\nEstado: {estado}\nFecha: {fecha}\nTotal: {total}\nPagado: {pagado}\nDeuda: {deuda}\nHora: {hora}';
 
     // Limpiar los números para mostrar en el mensaje (quitar los estados)
     const numerosLimpios = cliente.numeros.split(',').map(num => {
         return num.includes(':') ? num.split(':')[0] : num;
     }).join(', ');
 
+    // Calcular montos
+    const totalNumeros = cliente.numeros.split(',').length;
+    const total = totalNumeros * (rifa?.precio || 0);
+
+    // Calcular pagado y deuda
+    let pagado = numerosPagados * (rifa?.precio || 0);
+    let deuda = total - pagado;
+
+    // DETERMINAR ESTADO GENERAL (si todos son pagados = "pagado", si todos apartados = "apartado", si mezclados = "mixto")
+    let estadoGeneral = 'mixto';
+    if (numerosPagados === totalNumeros) estadoGeneral = 'pagado';
+    if (numerosApartados === totalNumeros) estadoGeneral = 'apartado';
+
     mensajeTicket = mensajeTicket
         .replace(/{nombre}/g, cliente.nombre)
         .replace(/{telefono}/g, cliente.telefono)
         .replace(/{rifa}/g, rifa.nombre)
         .replace(/{numeros}/g, numerosLimpios)
-        .replace(/{estado}/g, cliente.estado)
-        .replace(/{fecha}/g, new Date().toLocaleDateString());
+        .replace(/{estado}/g, estadoGeneral)  // ← ESTADO CORREGIDO
+        .replace(/{fecha}/g, new Date().toLocaleDateString())
+        .replace(/{total}/g, total.toFixed(2))
+        .replace(/{pagado}/g, pagado.toFixed(2))
+        .replace(/{deuda}/g, deuda.toFixed(2))
+        .replace(/{hora}/g, new Date().toLocaleTimeString());
 
     const mensajeHTML = mensajeTicket.split('\n').map(line => 
         `<div style="margin-bottom: 8px;">${line}</div>`
@@ -1649,27 +2126,114 @@ function generarTicket(cliente) {
     document.body.appendChild(loadingMessage);
 
     html2canvas(ticketElement).then(canvas => {
-        const image = canvas.toDataURL('image/png');
-        const url = `https://wa.me/${cliente.telefono}?text=${encodeURIComponent('Aquí está tu ticket de rifa')}`;
+        // Crear un elemento de imagen para mostrar el ticket
+        const img = document.createElement('img');
+        img.src = canvas.toDataURL('image/png');
+        img.style.maxWidth = '100%';
         
-        const link = document.createElement('a');
-        link.href = image;
-        link.download = `ticket_${cliente.nombre}.png`;
+        // Limpiar y mostrar el ticket en pantalla
+        document.body.removeChild(ticketElement);
+        document.body.removeChild(loadingMessage);
         
-        const whatsappWindow = window.open(url, '_blank');
+        // Crear contenedor principal
+        const ticketContainer = document.createElement('div');
+        ticketContainer.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            display: flex;
+            flex-direction: column;
+            z-index: 9999;
+            padding: 20px;
+            overflow-y: auto; /* Permite hacer scroll si el contenido es muy largo */
+        `;
         
-        setTimeout(() => {
-            document.body.removeChild(ticketElement);
-            document.body.removeChild(loadingMessage);
-            
-            if (whatsappWindow) {
-                setTimeout(() => {
-                    link.click();
-                }, 1000);
-            } else {
-                link.click();
-            }
-        }, 1000);
+        // Contenedor para los botones (fijo en la parte inferior)
+        const buttonContainer = document.createElement('div');
+        buttonContainer.style.cssText = `
+            position: sticky;
+            bottom: 0;
+            background: rgba(0,0,0,0.9);
+            padding: 15px 0;
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            width: 100%;
+            z-index: 10000;
+        `;
+        
+        // Contenedor para la imagen del ticket (con scroll)
+        const imageContainer = document.createElement('div');
+        imageContainer.style.cssText = `
+            flex-grow: 1;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            padding: 20px;
+            overflow-y: auto;
+        `;
+        
+        imageContainer.appendChild(img);
+        
+        // Botón para copiar al portapapeles
+        const copyButton = document.createElement('button');
+        copyButton.textContent = 'Copiar al Portapapeles';
+        copyButton.style.cssText = `
+            padding: 10px 20px;
+            background: #3498db;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        `;
+        
+        copyButton.onclick = () => {
+            canvas.toBlob(blob => {
+                navigator.clipboard.write([
+                    new ClipboardItem({
+                        'image/png': blob
+                    })
+                ]).then(() => {
+                    alert('Ticket copiado al portapapeles');
+                    document.body.removeChild(ticketContainer);
+                }).catch(err => {
+                    console.error('Error al copiar:', err);
+                    alert('No se pudo copiar al portapapeles. Puedes hacer una captura manual.');
+                });
+            });
+        };
+        
+        // Botón para cerrar
+        const closeButton = document.createElement('button');
+        closeButton.textContent = 'Cerrar';
+        closeButton.style.cssText = `
+            padding: 10px 20px;
+            background: #e74c3c;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            font-size: 16px;
+            cursor: pointer;
+        `;
+        
+        closeButton.onclick = () => {
+            document.body.removeChild(ticketContainer);
+        };
+        
+        // Agregar elementos al contenedor de botones
+        buttonContainer.appendChild(copyButton);
+        buttonContainer.appendChild(closeButton);
+        
+        // Agregar elementos al contenedor principal
+        ticketContainer.appendChild(imageContainer);
+        ticketContainer.appendChild(buttonContainer);
+        
+        document.body.appendChild(ticketContainer);
+        
     }).catch(err => {
         console.error('Error al generar ticket:', err);
         alert('Error al generar el ticket');
@@ -1689,20 +2253,45 @@ function enviarRezagados(cliente) {
         return num.includes(':') ? num.split(':')[0] : num;
     }).join(', ');
     
+    // CALCULAR ESTADO GENERAL CORRECTO
+    let numerosPagados = 0;
+    let numerosApartados = 0;
+    const totalNumeros = cliente.numeros.split(',').length;
+    
+    cliente.numeros.split(',').forEach(numCompleto => {
+        const estado = numCompleto.includes(':') ? numCompleto.split(':')[1] : cliente.estado;
+        if (estado === 'pagado') numerosPagados++;
+        if (estado === 'apartado') numerosApartados++;
+    });
+    
+    let estadoGeneral = 'mixto';
+    if (numerosPagados === totalNumeros) estadoGeneral = 'pagado';
+    if (numerosApartados === totalNumeros) estadoGeneral = 'apartado';
+    
     let mensaje = plantilla
         .replace(/{nombre}/g, cliente.nombre)
         .replace(/{rifa}/g, rifa.nombre)
         .replace(/{numeros}/g, numerosLimpios)
-        .replace(/{estado}/g, cliente.estado);
+        .replace(/{estado}/g, estadoGeneral);  // ← ESTADO CORREGIDO
     
     const url = `https://wa.me/${cliente.telefono}?text=${encodeURIComponent(mensaje)}`;
     window.open(url, '_blank');
 }
 
 function mostrarModalPlantilla() {
-    // Cargar plantillas
-    const plantillaWhatsApp = localStorage.getItem('rifasSucre_plantilla') || '';
-    const plantillaRezagados = localStorage.getItem('rifasSucre_plantilla_rezagados') || plantillaWhatsApp;
+    // Cargar plantillas con variables por defecto si no existen
+    const plantillaWhatsApp = localStorage.getItem('rifasSucre_plantilla') || 
+        '¡Hola {nombre}!\n\n' +
+        'Gracias por participar en la rifa "{rifa}".\n' +
+        'Tus números son: {numeros}\n' +
+        'Estado: {estado}\n\n' +
+        '¡Mucha suerte!';
+    
+    const plantillaRezagados = localStorage.getItem('rifasSucre_plantilla_rezagados') || 
+        '¡Hola {nombre}!\n\n' +
+        'Recordatorio: Tus números {numeros} en la rifa "{rifa}" están como {estado}.\n' +
+        'Por favor completa tu pago lo antes posible.\n\n' +
+        '¡Gracias por tu apoyo!';
     
     document.getElementById('plantilla-mensaje').value = plantillaWhatsApp;
     document.getElementById('plantilla-rezagados').value = plantillaRezagados;
@@ -1730,13 +2319,6 @@ function guardarPlantillas() {
     localStorage.setItem('rifasSucre_plantilla_rezagados', plantillaRezagados);
     plantillaModal.classList.add('hidden');
     alert('Plantillas guardadas correctamente');
-}
-
-function guardarPlantilla() {
-    const plantilla = document.getElementById('plantilla-mensaje').value;
-    localStorage.setItem('rifasSucre_plantilla', plantilla);
-    plantillaModal.classList.add('hidden');
-    alert('Plantilla guardada correctamente');
 }
 
 function mostrarModalPlantillaTicket() {
@@ -1837,129 +2419,100 @@ function restaurarRespaldo() {
 }
 
 function mostrarSeguridad() {
-    if (!superusuarioActivo && !modoPrueba) {
-        seguridadSection.innerHTML = '<p>Acceso denegado. Solo para superusuario.</p>';
-        return;
-    }
+    if (!superusuarioActivo) return;
+    
+    limpiarCodigosExpirados();
     
     seguridadSection.innerHTML = `
-        <h2>Seguridad</h2>
-        <p>Desde aquí puedes generar códigos de acceso de un solo uso.</p>
+        <h2>🔑 Gestión de Accesos</h2>
         
-        <div class="seguridad-info">
-            <div class="info-box">
-                <h3><i class="fas fa-info-circle"></i> Información</h3>
-                <p>Modo Prueba: ${modoPrueba ? 'ACTIVO' : 'INACTIVO'}</p>
-                ${modoPrueba ? `<p>Días restantes: ${calcularDiasRestantesPrueba()}</p>` : ''}
-                <p>Superusuario: ${superusuarioActivo ? 'ACTIVO' : 'INACTIVO'}</p>
+        <div class="generar-codigo">
+            <h3>Generar Nuevo Código</h3>
+            <input type="number" id="codigo-duracion" placeholder="Días de validez (ej: 7)" min="1">
+            <button onclick="generarCodigoAcceso()">Generar</button>
+            
+            <div id="codigo-generado-container" class="hidden">
+                <div class="codigo-box" id="codigo-generado"></div>
+                <p>Este código es de un solo uso</p>
             </div>
         </div>
         
-        ${superusuarioActivo ? `
-        <button id="btn-generar-codigo-modal"><i class="fas fa-key"></i> Generar Código</button>
-        <button id="btn-cerrar-sesion"><i class="fas fa-sign-out-alt"></i> Cerrar Sesión Superusuario</button>
-        
-        <h3>Códigos Generados</h3>
-        <div id="lista-codigos">
-            ${codigosFirebase.length > 0 ? 
-                codigosFirebase.map(codigo => `
-                    <div class="codigo-item">
-                        <p><strong>Código:</strong> ${codigo.codigo}</p>
-                        <p><strong>Expira:</strong> ${new Date(codigo.expiracion).toLocaleDateString()}</p>
-                        <p><strong>Generado:</strong> ${new Date(codigo.generadoEl).toLocaleDateString()}</p>
-                        <p><strong>Estado:</strong> ${codigo.usado ? 'USADO' : 'DISPONIBLE'}</p>
-                        ${codigo.usado ? `<p><strong>Dispositivo:</strong> ${codigo.dispositivo || 'No registrado'}</p>` : ''}
-                        <hr>
-                    </div>
-                `).join('') : 
-                '<p>No hay códigos generados recientemente.</p>'
-            }
+        <div class="lista-codigos">
+            <h3>Códigos Activos</h3>
+            ${codigosValidos.map(c => `
+                <div class="codigo-item ${codigosUsados.includes(c.codigo) ? 'usado' : ''}">
+                    <strong>${c.codigo}</strong> - 
+                    Válido hasta: ${new Date(c.expiracion).toLocaleDateString()}
+                    ${codigosUsados.includes(c.codigo) ? ' (USADO)' : ''}
+                </div>
+            `).join('')}
         </div>
-        ` : ''}
     `;
-    
-    if (superusuarioActivo) {
-        document.getElementById('btn-generar-codigo-modal').addEventListener('click', () => {
-            seguridadModal.classList.remove('hidden');
-            document.getElementById('codigo-generado-container').classList.add('hidden');
-        });
-        
-        document.getElementById('btn-cerrar-sesion').addEventListener('click', cerrarSesionSuperusuario);
-    }
 }
 
 async function generarCodigoAcceso() {
-    const duracion = parseInt(document.getElementById('codigo-duracion').value);
-    
-    if (isNaN(duracion) || duracion <= 0) {
-        alert('Por favor ingresa una duración válida (mayor a 0 días)');
+    if (!superusuarioActivo) {
+        alert('❌ Solo el superusuario puede generar códigos');
         return;
     }
-    
-    // 1. Generar código numérico de 8 dígitos
+
+    const duracion = parseInt(document.getElementById('codigo-duracion').value) || 7;
     const codigo = Math.floor(10000000 + Math.random() * 90000000).toString();
-    
-    // 2. Calcular fecha de expiración
     const expiracion = new Date();
     expiracion.setDate(expiracion.getDate() + duracion);
-    
-    // 3. Guardar en Firebase
-    try {
-        await db.collection("codigos").add({
-            codigo,
-            expiracion: expiracion.toISOString(),
-            generadoEl: new Date().toISOString(),
-            usado: false,
-            generadoPor: superusuarioActivo ? "superusuario" : "sistema"
-        });
-    } catch (error) {
-        console.error("Error al guardar en Firebase:", error);
-        alert("Error al conectar con el servidor. Intenta nuevamente.");
-        return;
-    }
-    
-    // 4. Guardar localmente
-    const codigosValidos = JSON.parse(localStorage.getItem('rifasSucre_codigosValidos') || "[]");
-    codigosValidos.push({
+
+    const nuevoCodigo = {
         codigo: codigo,
         expiracion: expiracion.toISOString(),
-        generadoEl: new Date().toISOString()
-    });
-    localStorage.setItem('rifasSucre_codigosValidos', JSON.stringify(codigosValidos));
-    
-    // 5. Mostrar al usuario
-    document.getElementById('codigo-generado').textContent = codigo;
-    document.getElementById('codigo-generado-container').classList.remove('hidden');
-    
-    // 6. Actualizar la lista visible
-    mostrarSeguridad();
-    
-    alert(`Código generado: ${codigo}\nEste código expira en ${duracion} días.`);
-}
-async function generarCodigoFirebase(duracionDias) {
+        generadoEl: new Date().toISOString(),
+        generadoPor: "superusuario",
+        usado: false
+    };
+
     try {
-        if (!superusuarioActivo) {
-            alert('Solo el superusuario puede generar códigos');
-            return null;
-        }
-
-        const codigo = Math.floor(10000000 + Math.random() * 90000000).toString();
-        const expiracion = new Date();
-        expiracion.setDate(expiracion.getDate() + duracionDias);
-
-        await db.collection("codigos").add({
-            codigo,
-            expiracion: expiracion.toISOString(),
-            generadoEl: new Date().toISOString(),
-            usado: false,
-            generadoPor: auth.currentUser.uid
+        // Guardar en IndexedDB
+        const tx = db.transaction(['codigos'], 'readwrite');
+        const store = tx.objectStore('codigos');
+        
+        // Verificar si el código ya existe (muy improbable pero por seguridad)
+        const existe = await new Promise(resolve => {
+            const req = store.get(codigo);
+            req.onsuccess = () => resolve(!!req.result);
+            req.onerror = () => resolve(false);
         });
 
-        return codigo;
+        if (existe) {
+            alert('Error: Código ya existe. Intenta generar otro.');
+            return;
+        }
+
+        // Guardar el nuevo código
+        await store.put(nuevoCodigo);
+        
+        // Actualizar la lista local
+        codigosValidos.push(nuevoCodigo);
+        
+        // Mostrar confirmación
+        const codigoBox = document.getElementById('codigo-generado');
+        codigoBox.innerHTML = `
+            <strong>Código:</strong> ${codigo}<br>
+            <strong>Válido hasta:</strong> ${expiracion.toLocaleDateString()}<br>
+            <strong>Duración:</strong> ${duracion} días
+        `;
+        document.getElementById('codigo-generado-container').classList.remove('hidden');
+        
+        console.log('Código guardado en IndexedDB:', codigo);
+        alert('✅ Código generado correctamente. Cópialo ahora: ' + codigo);
     } catch (error) {
-        console.error("Error generando código:", error);
-        return null;
+        console.error('Error al guardar el código:', error);
+        alert('❌ Error al guardar el código. Verifica la consola para más detalles.');
     }
+}
+
+function limpiarCodigosExpirados() {
+    const ahora = new Date();
+    codigosValidos = codigosValidos.filter(c => new Date(c.expiracion) > ahora);
+    localStorage.setItem('codigosValidos', JSON.stringify(codigosValidos));
 }
 
 function cerrarSesionSuperusuario() {
@@ -2012,16 +2565,20 @@ function guardarDatos() {
 }
 
 function salir() {
-    if (superusuarioActivo) {
-        cerrarSesionSuperusuario();
-    }
+    // Limpiar solo la sesión actual
+    sessionStorage.removeItem('codigo_acceso_actual');
     
+    // No limpiar el código de acceso persistente
     mainContainer.classList.add('hidden');
     accesoContainer.classList.remove('hidden');
     codigoAccesoInput.value = '';
     codigoAccesoInput.focus();
+    
+    if (superusuarioActivo) {
+        superusuarioActivo = false;
+        if (superusuarioTimeout) clearTimeout(superusuarioTimeout);
+    }
 }
-
 function crearElementoCliente(cliente) {
     const clienteItem = document.createElement('div');
     clienteItem.className = 'cliente-item';
@@ -2075,10 +2632,30 @@ function crearElementoCliente(cliente) {
         });
     
     const clienteAcciones = document.createElement('div');
-    clienteAcciones.className = 'cliente-acciones';
-    
-    const btnWhatsApp = document.createElement('button');
-    btnWhatsApp.innerHTML = '<i class="fab fa-whatsapp"></i> WhatsApp';
+clienteAcciones.className = 'cliente-acciones';
+
+// Agrega el botón de imprimir factura
+const btnImprimirFactura = document.createElement('button');
+btnImprimirFactura.innerHTML = '<i class="fas fa-print"></i> Factura';
+btnImprimirFactura.style.backgroundColor = '#16a085';
+btnImprimirFactura.addEventListener('click', (e) => {
+    e.stopPropagation();
+    imprimirFactura(cliente);
+});
+clienteAcciones.appendChild(btnImprimirFactura);
+
+// Nuevo botón Alternar
+const btnAlternar = document.createElement('button');
+btnAlternar.innerHTML = '<i class="fas fa-sync-alt"></i> Alternar';
+btnAlternar.style.backgroundColor = '#9b59b6';
+btnAlternar.addEventListener('click', (e) => {
+    e.stopPropagation();
+    mostrarModalAlternarEstado(cliente);
+});
+clienteAcciones.appendChild(btnAlternar);
+
+const btnWhatsApp = document.createElement('button');
+btnWhatsApp.innerHTML = '<i class="fab fa-whatsapp"></i> WhatsApp';
     btnWhatsApp.addEventListener('click', (e) => {
         e.stopPropagation();
         enviarWhatsApp(cliente);
@@ -2115,12 +2692,17 @@ function crearElementoCliente(cliente) {
     });
     
     const btnEliminar = document.createElement('button');
-    btnEliminar.innerHTML = '<i class="fas fa-trash"></i> Eliminar';
-    btnEliminar.style.backgroundColor = '#e74c3c';
-    btnEliminar.addEventListener('click', (e) => {
-        e.stopPropagation();
-        confirmarEliminarCliente(cliente.id);
-    });
+btnEliminar.textContent = 'Eliminar';
+btnEliminar.style.backgroundColor = '#e74c3c';
+btnEliminar.style.color = 'white';
+btnEliminar.addEventListener('click', (e) => {
+    e.stopPropagation();
+    mostrarConfirmacion(
+        'Eliminar Cliente',
+        `¿Estás seguro de que deseas eliminar al cliente "${cliente.nombre}"?`,
+        () => eliminarCliente(cliente.id)
+    );
+});
     
     clienteAcciones.appendChild(btnWhatsApp);
     clienteAcciones.appendChild(btnTicket);
@@ -2133,4 +2715,240 @@ function crearElementoCliente(cliente) {
     clienteItem.appendChild(clienteAcciones);
     
     return clienteItem;
+}
+
+function mostrarModalAlternarEstado(cliente) {
+    mostrarConfirmacion(
+        'Alternar Estado',
+        `¿Cambiar estado de TODOS los números de ${cliente.nombre}?`,
+        () => {
+            // Crear un mini modal de selección
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                background: white;
+                padding: 20px;
+                border-radius: 5px;
+                box-shadow: 0 0 20px rgba(0,0,0,0.2);
+                z-index: 1001;
+                text-align: center;
+            `;
+            
+            modal.innerHTML = `
+                <h3>Seleccionar Estado</h3>
+                <div style="display: flex; gap: 10px; margin: 20px 0; justify-content: center;">
+                    <button id="btn-cambiar-apartado" style="background: #f1c40f; padding: 10px 15px;">Apartado</button>
+                    <button id="btn-cambiar-pagado" style="background: #2ecc71; padding: 10px 15px;">Pagado</button>
+                </div>
+                <button id="btn-cancelar-cambio" style="background: #e74c3c; padding: 8px 15px;">Cancelar</button>
+            `;
+            
+            document.body.appendChild(modal);
+            
+            // Configurar eventos
+            document.getElementById('btn-cambiar-apartado').addEventListener('click', () => {
+                alternarTodosNumeros(cliente, 'apartado');
+                modal.remove();
+            });
+            
+            document.getElementById('btn-cambiar-pagado').addEventListener('click', () => {
+                alternarTodosNumeros(cliente, 'pagado');
+                modal.remove();
+            });
+            
+            document.getElementById('btn-cancelar-cambio').addEventListener('click', () => {
+                modal.remove();
+            });
+        }
+    );
+}
+
+async function alternarTodosNumeros(cliente, nuevoEstado) {
+    // Procesar los números para asignarles el nuevo estado
+    const nuevosNumeros = cliente.numeros.split(',').map(num => {
+        const numBase = num.includes(':') ? num.split(':')[0] : num;
+        return `${numBase}:${nuevoEstado}`;
+    }).join(',');
+    
+    // Actualizar el cliente
+    cliente.numeros = nuevosNumeros;
+    cliente.estado = nuevoEstado;
+    
+    // Guardar cambios
+    await guardarTodo();
+    actualizarListaClientes();
+}
+
+// Función para mostrar la plantilla de factura
+function mostrarModalPlantillaFactura() {
+    document.getElementById('factura-titulo').value = 
+        localStorage.getItem('facturaTitulo') || 'FACTURA DE VENTA';
+    document.getElementById('factura-encabezado').value = 
+        localStorage.getItem('facturaEncabezado') || `${localStorage.getItem('nombreApp') || 'Rifas Sucre'}\nTeléfono: \nDirección: `;
+    document.getElementById('factura-cuerpo').value = 
+        localStorage.getItem('facturaCuerpo') || 'Cliente: {nombre}\nRifa: {rifa}\nNúmeros: {numeros}\nCantidad: {cantidad}\nPrecio unitario: {precio}\nTotal: {total}';
+    document.getElementById('factura-pie').value = 
+        localStorage.getItem('facturaPie') || '¡Gracias por su compra!\nVálido como factura';
+    
+    plantillaFacturaModal.classList.remove('hidden');
+}
+
+// Función para guardar la plantilla de factura
+function guardarPlantillaFactura() {
+    const titulo = document.getElementById('factura-titulo').value.trim();
+    const encabezado = document.getElementById('factura-encabezado').value.trim();
+    const cuerpo = document.getElementById('factura-cuerpo').value.trim();
+    const pie = document.getElementById('factura-pie').value.trim();
+    
+    if (!titulo || !encabezado || !cuerpo || !pie) {
+        alert('Por favor completa todos los campos');
+        return;
+    }
+    
+    localStorage.setItem('facturaTitulo', titulo);
+    localStorage.setItem('facturaEncabezado', encabezado);
+    localStorage.setItem('facturaCuerpo', cuerpo);
+    localStorage.setItem('facturaPie', pie);
+    
+    plantillaFacturaModal.classList.add('hidden');
+    alert('Plantilla de factura guardada correctamente');
+}
+
+// Función para imprimir factura
+function imprimirFactura(cliente) {
+    const rifa = rifas.find(r => r.id === cliente.rifaId);
+    if (!rifa) {
+        alert('No se encontró la rifa asociada al cliente');
+        return;
+    }
+
+    // Mostrar modal de confirmación de impresión
+    document.getElementById('imprimir-factura-modal').classList.remove('hidden');
+    
+    // Configurar eventos de los botones
+    document.getElementById('btn-imprimir-factura').onclick = () => {
+        generarFactura(cliente, parseInt(document.getElementById('tamano-impresion').value));
+        document.getElementById('imprimir-factura-modal').classList.add('hidden');
+    };
+    
+    document.getElementById('btn-cancelar-impresion').onclick = () => {
+        document.getElementById('imprimir-factura-modal').classList.add('hidden');
+    };
+}
+
+// Función para generar la factura
+function generarFactura(cliente, ancho) {
+    const rifa = rifas.find(r => r.id === cliente.rifaId);
+    const cantidadNumeros = cliente.numeros.split(',').length;
+    const precioUnitario = rifa.precio || 0;
+    const total = cantidadNumeros * precioUnitario;
+    
+    // Calcular pagado y deuda
+    let pagado = 0;
+    
+    // CALCULAR ESTADO GENERAL CORRECTO
+    let numerosPagados = 0;
+    let numerosApartados = 0;
+    const totalNumeros = cliente.numeros.split(',').length;
+
+    cliente.numeros.split(',').forEach(numCompleto => {
+        const estado = numCompleto.includes(':') ? numCompleto.split(':')[1] : cliente.estado;
+        if (estado === 'pagado') {
+            pagado += precioUnitario;
+            numerosPagados++;
+        }
+        if (estado === 'apartado') numerosApartados++;
+    });
+    
+    let estadoGeneral = 'mixto';
+    if (numerosPagados === totalNumeros) estadoGeneral = 'pagado';
+    if (numerosApartados === totalNumeros) estadoGeneral = 'apartado';
+    
+    const deuda = total - pagado;
+    
+    // Limpiar números para mostrar
+    const numerosLimpios = cliente.numeros.split(',').map(num => {
+        return num.includes(':') ? num.split(':')[0] : num;
+    }).join(', ');
+    
+    // Obtener plantilla de factura
+    const titulo = localStorage.getItem('facturaTitulo') || 'FACTURA DE VENTA';
+    const encabezado = localStorage.getItem('facturaEncabezado') || `${localStorage.getItem('nombreApp') || 'Rifas Sucre'}\nTeléfono: \nDirección: `;
+    let cuerpo = localStorage.getItem('facturaCuerpo') || 'Cliente: {nombre}\nRifa: {rifa}\nNúmeros: {numeros}\nCantidad: {cantidad}\nPrecio unitario: {precio}\nTotal: {total}\nPagado: {pagado}\nDeuda: {deuda}';
+    const pie = localStorage.getItem('facturaPie') || '¡Gracias por su compra!\nDocumento sin validez fiscal';
+    
+    // Reemplazar variables (incluyendo las nuevas)
+    cuerpo = cuerpo
+        .replace(/{nombre}/g, cliente.nombre)
+        .replace(/{rifa}/g, rifa.nombre)
+        .replace(/{numeros}/g, numerosLimpios)
+        .replace(/{cantidad}/g, cantidadNumeros)
+        .replace(/{precio}/g, precioUnitario.toFixed(2))
+        .replace(/{total}/g, total.toFixed(2))
+        .replace(/{pagado}/g, pagado.toFixed(2))
+        .replace(/{deuda}/g, deuda.toFixed(2))
+        .replace(/{fecha}/g, new Date().toLocaleDateString())
+        .replace(/{hora}/g, new Date().toLocaleTimeString())
+        .replace(/{estado}/g, estadoGeneral); // ← AQUÍ ESTÁ EL CAMBIO PRINCIPAL
+    
+    // Crear contenido de la factura con ajustes específicos de tamaño
+    const facturaContent = `
+    <div id="factura-impresion" style="width: ${ancho}mm; padding: 3mm; font-family: 'Courier New', monospace; font-size: ${ancho === 58 ? '14px' : '14px'}; line-height: 1.2; font-weight: normal;">
+        <h2 style="margin: 3px 0; font-size: ${ancho === 58 ? '16px' : '16px'}; font-weight: bold; text-align: left;">${titulo}</h2>
+        <div style="margin: 3px 0; font-size: ${ancho === 58 ? '13px' : '13px'}; white-space: pre-line; text-align: left;">${encabezado}</div>
+        <hr style="border-top: 1px dashed #000; margin: 4px 0;">
+        <div style="margin: 4px 0; white-space: pre-line;">${cuerpo}</div>
+        <hr style="border-top: 1px dashed #000; margin: 4px 0;">
+        <div style="font-size: ${ancho === 58 ? '13px' : '13px'}; margin: 4px 0; white-space: pre-line; text-align: left;">${pie}</div>
+        <div style="margin-top: 6px; font-size: ${ancho === 58 ? '12px' : '12px'}; text-align: left;">${new Date().toLocaleString()}</div>
+    </div>
+`;
+    
+    // Crear ventana de impresión
+    const ventanaImpresion = window.open('', '_blank', 'width=600,height=600');
+    ventanaImpresion.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Factura ${cliente.nombre}</title>
+            <style>
+                @media print {
+                    body { 
+                        margin: 0 !important; 
+                        padding: 0 !important;
+                        width: ${ancho}mm;
+                    }
+                    #factura-impresion {
+                        width: ${ancho}mm !important;
+                        padding: 2mm 3mm !important;
+                        margin: 0 !important;
+                    }
+                    button { display: none !important; }
+                    hr { border-top: 1px solid #000 !important; }
+                }
+                @page {
+                    size: ${ancho}mm auto;
+                    margin: 2mm;
+                }
+            </style>
+        </head>
+        <body style="margin: 0; padding: 0;">
+            ${facturaContent}
+            <div style="text-align: center; margin-top: 10px;">
+                <button onclick="window.print()" style="padding: 8px 15px; background: #3498db; color: white; border: none; border-radius: 3px; cursor: pointer; margin-right: 10px;">Imprimir</button>
+                <button onclick="window.close()" style="padding: 8px 15px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer;">Cancelar</button>
+            </div>
+            <script>
+                // Auto-enfocar el botón de imprimir
+                window.onload = function() {
+                    document.querySelector('button').focus();
+                };
+            </script>
+        </body>
+        </html>
+    `);
+    ventanaImpresion.document.close();
 }
