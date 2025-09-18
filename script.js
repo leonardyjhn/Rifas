@@ -598,6 +598,26 @@ document.getElementById('btn-manual').addEventListener('click', function() {
     document.getElementById('manual-modal').classList.remove('hidden');
 });
 
+// Verificar que todos los elementos del DOM existan
+function verificarElementosDOM() {
+    const elementosRequeridos = [
+        'acceso-container', 'main-container', 'codigo-acceso', 'btn-acceder',
+        'btn-superusuario', 'btn-contacto', 'btn-rifas', 'btn-clientes',
+        'btn-respaldo', 'btn-seguridad', 'btn-salir', 'rifas-section',
+        'clientes-section', 'respaldo-section', 'seguridad-section',
+        'rifa-activa-info', 'btn-cambiar-nombre', 'nombre-modal', 'app-title'
+    ];
+    
+    elementosRequeridos.forEach(id => {
+        if (!document.getElementById(id)) {
+            console.warn(`Elemento con ID '${id}' no encontrado en el DOM`);
+        }
+    });
+}
+
+// Llamar esta función después de que el DOM esté cargado
+document.addEventListener('DOMContentLoaded', verificarElementosDOM);
+
 async function initPersistentStorage() {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -700,7 +720,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         await initPersistentStorage();
         await migrarDatosExistentes();
         await cargarDatos();
-        await inicializarConfiguracionPorDefecto(); // Nueva línea
+        await inicializarConfiguracionPorDefecto();
+        
+        // Verificar elementos del DOM
+        verificarElementosDOM();
+        
         configurarEventos();
         
         // Verificar si ya tiene acceso
@@ -708,7 +732,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (tieneAcceso || superusuarioActivo) {
             accesoContainer.classList.add('hidden');
             mainContainer.classList.remove('hidden');
-            // Asegurar que los elementos existan antes de mostrarlos
             actualizarInfoRifaActiva();
             mostrarSeccion('rifas');
         }
@@ -717,7 +740,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         alert('Error al cargar la aplicación. Recarga la página.');
     }
 });
-
 
 async function cargarDatos() {
     try {
@@ -1213,30 +1235,57 @@ async function verificarCodigoGuardado(codigo) {
 
 function configurarEventos() {
     // Acceso
-    btnAcceder.addEventListener('click', validarAcceso);
-    btnSuperusuario.addEventListener('click', mostrarModalSuperusuario);
-    btnContacto.addEventListener('click', () => {
-        window.open('https://wa.me/584245244171', '_blank');
-    });
+    if (btnAcceder) btnAcceder.addEventListener('click', validarAcceso);
+    if (btnSuperusuario) btnSuperusuario.addEventListener('click', mostrarModalSuperusuario);
     
-    // Manual de usuario
-    document.getElementById('btn-manual').addEventListener('click', function() {
-        document.getElementById('manual-content').innerHTML = manualContent;
-        document.getElementById('manual-modal').classList.remove('hidden');
-    });
+    // Contacto con verificación
+    if (btnContacto) {
+        btnContacto.addEventListener('click', () => {
+            window.open('https://wa.me/584245244171', '_blank');
+        });
+    }
+    
+    // Manual de usuario - con verificación de existencia
+    const btnManual = document.getElementById('btn-manual');
+    if (btnManual) {
+        btnManual.addEventListener('click', function() {
+            const manualContentElement = document.getElementById('manual-content');
+            const manualModal = document.getElementById('manual-modal');
+            
+            if (manualContentElement && manualModal) {
+                manualContentElement.innerHTML = manualContent;
+                manualModal.classList.remove('hidden');
+            }
+        });
+    }
 
     // Menú principal
-    btnRifas.addEventListener('click', () => mostrarSeccion('rifas'));
-    btnClientes.addEventListener('click', () => mostrarSeccion('clientes'));
-    btnRespaldo.addEventListener('click', () => mostrarSeccion('respaldo'));
-    btnSeguridad.addEventListener('click', () => mostrarSeccion('seguridad'));
-    btnSalir.addEventListener('click', salir);
-    btnCambiarNombre.addEventListener('click', mostrarModalCambiarNombre);
-    document.getElementById('btn-guardar-nombre').addEventListener('click', guardarNuevoNombre);
+    if (btnRifas) btnRifas.addEventListener('click', () => mostrarSeccion('rifas'));
+    if (btnClientes) btnClientes.addEventListener('click', () => mostrarSeccion('clientes'));
+    if (btnRespaldo) btnRespaldo.addEventListener('click', () => mostrarSeccion('respaldo'));
+    if (btnSeguridad) btnSeguridad.addEventListener('click', () => mostrarSeccion('seguridad'));
+    if (btnSalir) btnSalir.addEventListener('click', salir);
+    if (btnCambiarNombre) btnCambiarNombre.addEventListener('click', mostrarModalCambiarNombre);
     
-    document.getElementById('btn-guardar-plantilla-ticket').addEventListener('click', guardarPlantillaTicket);
-    document.getElementById('btn-plantilla-factura').addEventListener('click', mostrarModalPlantillaFactura);
-    document.getElementById('btn-guardar-plantilla-factura').addEventListener('click', guardarPlantillaFactura);
+    const btnGuardarNombre = document.getElementById('btn-guardar-nombre');
+    if (btnGuardarNombre) {
+        btnGuardarNombre.addEventListener('click', guardarNuevoNombre);
+    }
+
+    const btnGuardarPlantillaTicket = document.getElementById('btn-guardar-plantilla-ticket');
+    if (btnGuardarPlantillaTicket) {
+        btnGuardarPlantillaTicket.addEventListener('click', guardarPlantillaTicket);
+    }
+    
+    const btnPlantillaFactura = document.getElementById('btn-plantilla-factura');
+    if (btnPlantillaFactura) {
+        btnPlantillaFactura.addEventListener('click', mostrarModalPlantillaFactura);
+    }
+    
+    const btnGuardarPlantillaFactura = document.getElementById('btn-guardar-plantilla-factura');
+    if (btnGuardarPlantillaFactura) {
+        btnGuardarPlantillaFactura.addEventListener('click', guardarPlantillaFactura);
+    }
 
     // Modales
     document.querySelectorAll('.close-modal').forEach(btn => {
@@ -1245,31 +1294,41 @@ function configurarEventos() {
         });
     });
    
-    document.getElementById('btn-clientes-permanentes').addEventListener('click', mostrarModalClientesPermanentes);
+    const btnClientesPermanentes = document.getElementById('btn-clientes-permanentes');
+    if (btnClientesPermanentes) {
+        btnClientesPermanentes.addEventListener('click', mostrarModalClientesPermanentes);
+    }
 
     // Superusuario
-    document.getElementById('btn-superusuario-acceder').addEventListener('click', validarSuperusuario);
+    const btnSuperusuarioAcceder = document.getElementById('btn-superusuario-acceder');
+    if (btnSuperusuarioAcceder) {
+        btnSuperusuarioAcceder.addEventListener('click', validarSuperusuario);
+    }
     
     // Eventos de teclado
-    codigoAccesoInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') validarAcceso();
-    });
+    if (codigoAccesoInput) {
+        codigoAccesoInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') validarAcceso();
+        });
+    }
     
-    document.getElementById('superusuario-clave').addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') validarSuperusuario();
-    });
+    const superusuarioClave = document.getElementById('superusuario-clave');
+    if (superusuarioClave) {
+        superusuarioClave.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') validarSuperusuario();
+        });
+    }
 
     // Liberar código al cerrar la página
-window.addEventListener('beforeunload', () => {
-    const codigoAcceso = sessionStorage.getItem('codigo_acceso_actual');
-    if (codigoAcceso) {
-        // Usamos sendBeacon para asegurar que la solicitud se complete incluso al cerrar
-        navigator.sendBeacon(`${SUPABASE_URL}/rest/v1/codigos_acceso?codigo=eq.${codigoAcceso}`, 
-            JSON.stringify({dispositivo_id: null})
-        );
-    }
-});
-
+    window.addEventListener('beforeunload', () => {
+        const codigoAcceso = sessionStorage.getItem('codigo_acceso_actual');
+        if (codigoAcceso) {
+            // Usamos sendBeacon para asegurar que la solicitud se complete incluso al cerrar
+            navigator.sendBeacon(`${SUPABASE_URL}/rest/v1/codigos_acceso?codigo=eq.${codigoAcceso}`, 
+                JSON.stringify({dispositivo_id: null})
+            );
+        }
+    });
 }
 
 function mostrarModalCambiarNombre() {
