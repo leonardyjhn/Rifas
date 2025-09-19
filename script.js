@@ -2,6 +2,7 @@
 
 
 
+
 // Configuración de IndexedDB
 const DB_NAME = 'RifasSucreDB';
 const DB_VERSION = 6; // Incrementa cuando hagas cambios
@@ -2348,24 +2349,77 @@ function actualizarListaClientes() {
 
 function filtrarClientes() {
     const busqueda = document.getElementById('buscador-clientes').value.toLowerCase();
-    const clientesItems = document.querySelectorAll('.cliente-item');
     
     if (!busqueda) {
-        clientesItems.forEach(item => item.style.display = 'block');
+        // Si no hay búsqueda, mostrar paginación normal
+        paginaActualClientes = 1;
+        actualizarListaClientes();
         return;
     }
     
-    clientesItems.forEach(item => {
-        const nombre = item.querySelector('.cliente-nombre').textContent.toLowerCase();
-        const telefono = item.querySelector('.cliente-telefono').textContent.toLowerCase();
-        const numeros = item.querySelector('.cliente-numeros').textContent.toLowerCase();
+    // Buscar en TODOS los clientes de la rifa activa
+    const rifa = rifas.find(r => r.id === rifaActiva);
+    if (!rifa) return;
+    
+    const clientesFiltrados = clientes
+        .filter(c => c.rifaId === rifaActiva)
+        .filter(cliente => {
+            const nombre = cliente.nombre.toLowerCase();
+            const telefono = cliente.telefono.toLowerCase();
+            const numeros = cliente.numeros.toLowerCase();
+            
+            return nombre.includes(busqueda) || 
+                   telefono.includes(busqueda) || 
+                   numeros.includes(busqueda);
+        })
+        .sort((a, b) => parseInt(a.numeroCliente.slice(1)) - parseInt(b.numeroCliente.slice(1)));
+    
+    // Mostrar resultados de búsqueda (sin paginación)
+    const listaClientes = document.querySelector('.clientes-lista');
+    const paginacionContainer = document.querySelector('.paginacion');
+    listaClientes.innerHTML = '';
+    paginacionContainer.innerHTML = '';
+    
+    if (clientesFiltrados.length === 0) {
+        listaClientes.innerHTML = '<p>No se encontraron clientes que coincidan con la búsqueda.</p>';
+    } else {
+        clientesFiltrados.forEach(cliente => {
+            const clienteItem = crearElementoCliente(cliente);
+            listaClientes.appendChild(clienteItem);
+        });
         
-        if (nombre.includes(busqueda) || telefono.includes(busqueda) || numeros.includes(busqueda)) {
-            item.style.display = 'block';
-        } else {
-            item.style.display = 'none';
-        }
-    });
+        // Mostrar contador de resultados
+        const resultadosInfo = document.createElement('div');
+        resultadosInfo.style.cssText = `
+            margin-top: 10px;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            font-size: 14px;
+            text-align: center;
+        `;
+        resultadosInfo.textContent = `Se encontraron ${clientesFiltrados.length} cliente(s) - Búsqueda: "${busqueda}"`;
+        listaClientes.appendChild(resultadosInfo);
+        
+        // Botón para limpiar búsqueda
+        const btnLimpiar = document.createElement('button');
+        btnLimpiar.textContent = 'Limpiar Búsqueda';
+        btnLimpiar.style.cssText = `
+            margin-top: 10px;
+            padding: 8px 15px;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        `;
+        btnLimpiar.addEventListener('click', () => {
+            document.getElementById('buscador-clientes').value = '';
+            paginaActualClientes = 1;
+            actualizarListaClientes();
+        });
+        listaClientes.appendChild(btnLimpiar);
+    }
 }
 
 function mostrarModalNuevoCliente() {
@@ -4046,4 +4100,3 @@ function generarFactura(cliente, ancho) {
     ventanaImpresion.document.close();
 
 }
-
