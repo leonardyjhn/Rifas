@@ -187,10 +187,24 @@
             <textarea id="factura-encabezado" rows="3" placeholder="Información de tu negocio">${localStorage.getItem('nombreApp') || 'Rifas Sucre'}\nTeléfono: \nDirección: </textarea>
         </div>
         <div class="form-group">
-            <label for="factura-cuerpo">Cuerpo (usa {variables}):</label>
-            <textarea id="factura-cuerpo" rows="5">Cliente: {nombre}\nRifa: {rifa}\nNúmeros: {numeros}\nCantidad: {cantidad}\nPrecio unitario: {precio}\nTotal: {total}</textarea>
-            <small>Variables: {nombre}, {rifa}, {numeros}, {cantidad}, {precio}, {total}, {fecha}, {hora}</small>
+    <label for="factura-cuerpo">Cuerpo (usa {variables}):</label>
+    <textarea id="factura-cuerpo" rows="5">Cliente: {nombre}\nRifa: {rifa}\nNúmeros: {numeros}\nCantidad: {cantidad}\nPrecio unitario: {precio}\nTotal: {total}</textarea>
+    <div class="variables-guia">
+        <h4>Variables disponibles:</h4>
+        <div class="variables-lista">
+            <span class="variable-tag">{nombre}</span>
+            <span class="variable-tag">{rifa}</span>
+            <span class="variable-tag">{numeros}</span>
+            <span class="variable-tag">{cantidad}</span>
+            <span class="variable-tag">{precio}</span>
+            <span class="variable-tag">{total}</span>
+            <span class="variable-tag">{fecha}</span>
+            <span class="variable-tag">{hora}</span>
+            <span class="variable-tag">{pagado}</span>
+            <span class="variable-tag">{deuda}</span>
         </div>
+    </div>
+</div>
         <div class="form-group">
             <label for="factura-pie">Pie de página:</label>
             <textarea id="factura-pie" rows="3" placeholder="Mensaje final">¡Gracias por su compra!\nVálido como factura</textarea>
@@ -230,14 +244,41 @@
             </div>
             
             <div class="tab-content active" id="whatsapp-tab">
-                <h3>Plantilla WhatsApp</h3>
-                <textarea id="plantilla-mensaje" rows="10"></textarea>
-            </div>
+    <h3>Plantilla WhatsApp</h3>
+    <textarea id="plantilla-mensaje" rows="10"></textarea>
+    <div class="variables-guia">
+        <h4>Variables disponibles:</h4>
+        <div class="variables-lista">
+            <span class="variable-tag">{nombre}</span>
+            <span class="variable-tag">{rifa}</span>
+            <span class="variable-tag">{numeros}</span>
+            <span class="variable-tag">{estado}</span>
+            <span class="variable-tag">{fecha}</span>
+            <span class="variable-tag">{hora}</span>
+            <span class="variable-tag">{total}</span>
+            <span class="variable-tag">{pagado}</span>
+            <span class="variable-tag">{deuda}</span>
+        </div>
+    </div>
+</div>
             
             <div class="tab-content" id="rezagados-tab">
-                <h3>Plantilla Rezagados</h3>
-                <textarea id="plantilla-rezagados" rows="10"></textarea>
-            </div>
+    <h3>Plantilla Rezagados</h3>
+    <textarea id="plantilla-rezagados" rows="10"></textarea>
+    <div class="variables-guia">
+        <h4>Variables disponibles:</h4>
+        <div class="variables-lista">
+            <span class="variable-tag">{nombre}</span>
+            <span class="variable-tag">{rifa}</span>
+            <span class="variable-tag">{numeros}</span>
+            <span class="variable-tag">{estado}</span>
+            <span class="variable-tag">{fecha}</span>
+            <span class="variable-tag">{total}</span>
+            <span class="variable-tag">{pagado}</span>
+            <span class="variable-tag">{deuda}</span>
+        </div>
+    </div>
+</div>
         </div>
         
         <button id="btn-guardar-plantilla">Guardar Plantillas</button>
@@ -313,10 +354,23 @@
                 <input type="text" id="plantilla-ticket-titulo" placeholder="Ej: TICKET DE RIFA">
             </div>
             <div class="form-group">
-                <label for="plantilla-ticket-mensaje">Mensaje (usa {variables}):</label>
-                <textarea id="plantilla-ticket-mensaje" rows="10" placeholder="Ej: Cliente: {nombre}\nNúmeros: {numeros}"></textarea>
-<small>Variables disponibles: {nombre}, {rifa}, {numeros}, {estado}, {fecha}, {total}, {pagado}, {deuda}, {hora}</small>
-            </div>
+    <label for="plantilla-ticket-mensaje">Mensaje (usa {variables}):</label>
+    <textarea id="plantilla-ticket-mensaje" rows="10" placeholder="Ej: Cliente: {nombre}\nNúmeros: {numeros}"></textarea>
+    <div class="variables-guia">
+        <h4>Variables disponibles:</h4>
+        <div class="variables-lista">
+            <span class="variable-tag">{nombre}</span>
+            <span class="variable-tag">{rifa}</span>
+            <span class="variable-tag">{numeros}</span>
+            <span class="variable-tag">{estado}</span>
+            <span class="variable-tag">{fecha}</span>
+            <span class="variable-tag">{hora}</span>
+            <span class="variable-tag">{total}</span>
+            <span class="variable-tag">{pagado}</span>
+            <span class="variable-tag">{deuda}</span>
+        </div>
+    </div>
+</div>
             <button id="btn-guardar-plantilla-ticket">Guardar Plantilla</button>
         </div>
     </div>
