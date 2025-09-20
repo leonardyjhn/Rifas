@@ -10,6 +10,9 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     
+<script src="https://apis.google.com/js/api.js"></script>
+<script src="https://accounts.google.com/gsi/client"></script>
+
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <link rel="manifest" href="./manifest.json">
@@ -58,8 +61,28 @@
             </div>
 
             <div id="respaldo-section" class="content-section hidden">
-                <!-- Contenido de Respaldo -->
-            </div>
+    <h2>Respaldo de Datos</h2>
+    <p>Aquí puedes crear una copia de seguridad de todos tus datos o restaurar desde una copia previa.</p>
+    
+    <div class="respaldo-acciones">
+        <button id="btn-crear-respaldo"><i class="fas fa-save"></i> Crear Respaldo Local</button>
+        <button id="btn-restaurar-respaldo"><i class="fas fa-upload"></i> Restaurar Respaldo Local</button>
+        <button id="btn-google-drive-backup"><i class="fab fa-google-drive"></i> Guardar en Google Drive</button>
+        <button id="btn-google-drive-restore"><i class="fab fa-google-drive"></i> Restaurar desde Google Drive</button>
+    </div>
+    
+    <div id="google-drive-section" class="hidden" style="margin-top: 20px; padding: 15px; background: #f9f9f9; border-radius: 5px;">
+        <h3>Conexión con Google Drive</h3>
+        <div class="form-group">
+            <label for="google-email">Correo electrónico de Google:</label>
+            <input type="email" id="google-email" placeholder="tu.correo@gmail.com" style="width: 100%; padding: 10px;">
+        </div>
+        <button id="btn-connect-google" style="background: #4285F4; color: white;">
+            <i class="fab fa-google"></i> Conectar con Google
+        </button>
+        <div id="google-status" style="margin-top: 10px; font-size: 14px;"></div>
+    </div>
+</div>
 
             <div id="seguridad-section" class="content-section hidden">
                 <!-- Contenido de Seguridad -->
@@ -327,6 +350,17 @@
         <div class="button-group">
             <button id="btn-exportar-clientes"><i class="fas fa-file-export"></i> Guardar Clientes</button>
             <button id="btn-importar-clientes"><i class="fas fa-file-import"></i> Restaurar Clientes</button>
+        </div>
+    </div>
+</div>
+
+<!-- Modal para Google Drive -->
+<div id="google-drive-modal" class="modal hidden">
+    <div class="modal-content">
+        <span class="close-modal">&times;</span>
+        <h2>Google Drive</h2>
+        <div id="google-drive-content">
+            <p>Conectando con Google Drive...</p>
         </div>
     </div>
 </div>
