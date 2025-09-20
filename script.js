@@ -484,6 +484,10 @@ let googleUserEmail = null;
 const GOOGLE_CLIENT_ID = '1089898770635-bpcf5c9v4ddo0d1ljas3kfsiki6ktvj0.apps.googleusercontent.com';
 const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.file';
 
+// NUEVO: Variables para verificación de expiración
+let ultimaVerificacion = null;
+const INTERVALO_VERIFICACION = 12 * 60 * 60 * 1000; // 12 horas
+
 // Configuración de Supabase
 const SUPABASE_URL = 'https://cnybagckrosizntlafip.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNueWJhZ2Nrcm9zaXpudGxhZmlwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTE0OTYsImV4cCI6MjA3Mzc4NzQ5Nn0.m5rsYhD66yyqOTf3N32qXUzaXTwTnPmNRM-Ie09T1Sc';
@@ -742,6 +746,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         await cargarDatos();
         await inicializarConfiguracionPorDefecto();
         
+        // NUEVO: Iniciar verificación periódica
+        iniciarVerificacionPeriodica();
+        
         // Verificar elementos del DOM
         verificarElementosDOM();
         
@@ -754,6 +761,9 @@ document.addEventListener('DOMContentLoaded', async () => {
             mainContainer.classList.remove('hidden');
             actualizarInfoRifaActiva();
             mostrarSeccion('rifas');
+            
+            // NUEVO: Verificar expiración inmediatamente
+            setTimeout(() => verificarEstadoCodigo(), 1000);
         }
     } catch (error) {
         console.error('Error en inicialización:', error);
@@ -1370,6 +1380,14 @@ function configurarEventos() {
         btnPlantillaFactura.addEventListener('click', mostrarModalPlantillaFactura);
     }
     
+// NUEVO: Configurar evento del modal de expiración
+    const btnEntendido = document.getElementById('btn-entendido-expirado');
+    if (btnEntendido) {
+        btnEntendido.addEventListener('click', () => {
+            document.getElementById('expirado-modal').classList.add('hidden');
+        });
+    }
+
     const btnGuardarPlantillaFactura = document.getElementById('btn-guardar-plantilla-factura');
     if (btnGuardarPlantillaFactura) {
         btnGuardarPlantillaFactura.addEventListener('click', guardarPlantillaFactura);
@@ -1845,6 +1863,90 @@ function obtenerIdDispositivo() {
     return id;
 }
 
+// Función para verificar expiración localmente
+function verificarExpiracionLocal(codigo) {
+    try {
+        // Buscar en códigos usados primero (almacenados localmente)
+        const codigoGuardado = codigosValidos.find(c => c.codigo === codigo);
+        
+        if (codigoGuardado) {
+            const ahora = new Date();
+            const expiracion = new Date(codigoGuardado.expiracion);
+            return ahora <= expiracion;
+        }
+        
+        // Si no está en local, necesitamos verificar en Supabase
+        return null;
+    } catch (error) {
+        console.error('Error en verificación local:', error);
+        return null;
+    }
+}
+
+// Función principal de verificación
+async function verificarEstadoCodigo() {
+    const codigo = sessionStorage.getItem('codigo_acceso_actual') || 
+                  localStorage.getItem('ultimo_acceso');
+    
+    if (!codigo || superusuarioActivo) return true;
+    
+    // Verificar localmente primero
+    const estadoLocal = verificarExpiracionLocal(codigo);
+    
+    if (estadoLocal === false) {
+        // Código expirado localmente
+        mostrarModalExpirado();
+        return false;
+    } else if (estadoLocal === null) {
+        // No hay información local concluyente, verificar en Supabase
+        try {
+            const esValido = await verificarCodigoEnDB(codigo);
+            if (!esValido) {
+                mostrarModalExpirado();
+                return false;
+            }
+            return true;
+        } catch (error) {
+            console.error('Error al verificar en Supabase:', error);
+            // En caso de error, permitir uso temporal
+            return true;
+        }
+    }
+    
+    return true;
+}
+
+// Función para mostrar modal de expiración
+function mostrarModalExpirado() {
+    accesoContainer.classList.remove('hidden');
+    mainContainer.classList.add('hidden');
+    
+    const modal = document.getElementById('expirado-modal');
+    modal.classList.remove('hidden');
+    
+    // Configurar evento del botón
+    document.getElementById('btn-entendido-expirado').onclick = () => {
+        modal.classList.add('hidden');
+        codigoAccesoInput.value = '';
+        codigoAccesoInput.focus();
+    };
+}
+
+// Verificación periódica
+function iniciarVerificacionPeriodica() {
+    // Verificar inmediatamente al cargar
+    setTimeout(() => verificarEstadoCodigo(), 1000);
+    
+    // Verificar cada 12 horas
+    setInterval(() => verificarEstadoCodigo(), INTERVALO_VERIFICACION);
+    
+    // Verificar al cambiar de pestaña/ventana
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+            verificarEstadoCodigo();
+        }
+    });
+}
 
 function mostrarModalSuperusuario() {
     superusuarioModal.classList.remove('hidden');
@@ -2081,8 +2183,14 @@ function mostrarModalEditarRifa(rifa) {
 }
 
 async function guardarNuevaRifa() {
+    // NUEVO: Verificar expiración antes de crear rifa
+    const codigoValido = await verificarEstadoCodigo();
+    if (!codigoValido) {
+        return; // Detener si el código expiró
+    }
+    
     const nombre = document.getElementById('rifa-nombre').value.trim();
-const total = parseInt(document.getElementById('rifa-total').value);
+    const total = parseInt(document.getElementById('rifa-total').value);
 const columnas = parseInt(document.getElementById('rifa-columnas').value);
 const porGrilla = parseInt(document.getElementById('rifa-por-grilla').value);
 const precio = parseFloat(document.getElementById('rifa-precio').value) || 0;
