@@ -208,19 +208,34 @@ async function obtenerCodigosActivos() {
 async function liberarCodigo(codigo) {
     try {
         const dispositivoId = obtenerIdDispositivo();
+        console.log('Intentando liberar código:', codigo, 'para dispositivo:', dispositivoId);
+        
         const resultado = await supabaseRequest(`codigos_acceso?codigo=eq.${codigo}&select=*`);
         
-        if (resultado.length > 0 && resultado[0].dispositivo_id === dispositivoId) {
-            await supabaseRequest(`codigos_acceso?codigo=eq.${codigo}`, {
-                method: 'PATCH',
-                body: JSON.stringify({
-                    dispositivo_id: null
-                })
-            });
-            console.log('Código liberado:', codigo);
+        if (resultado.length > 0) {
+            const codigoObj = resultado[0];
+            
+            // Liberar si el código está siendo usado por este dispositivo o cualquier dispositivo
+            // (esto es más permisivo para asegurar la liberación en móviles)
+            if (codigoObj.dispositivo_id === dispositivoId || codigoObj.dispositivo_id) {
+                await supabaseRequest(`codigos_acceso?codigo=eq.${codigo}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        dispositivo_id: null,
+                        ultimo_uso: new Date().toISOString()
+                    })
+                });
+                console.log('✅ Código liberado exitosamente:', codigo);
+                return true;
+            } else {
+                console.log('Código no estaba en uso o no pertenece a este dispositivo');
+                return true; // Considerar éxito aunque no estuviera en uso
+            }
         }
+        return false;
     } catch (error) {
-        console.error('Error al liberar código:', error);
+        console.error('❌ Error al liberar código:', error);
+        throw error;
     }
 }
 
@@ -1357,15 +1372,17 @@ function configurarEventos() {
     }
 
     // Liberar código al cerrar la página
-    window.addEventListener('beforeunload', () => {
-        const codigoAcceso = sessionStorage.getItem('codigo_acceso_actual');
-        if (codigoAcceso) {
-            // Usamos sendBeacon para asegurar que la solicitud se complete incluso al cerrar
-            navigator.sendBeacon(`${SUPABASE_URL}/rest/v1/codigos_acceso?codigo=eq.${codigoAcceso}`, 
-                JSON.stringify({dispositivo_id: null})
-            );
-        }
-    });
+    // NO liberar código automáticamente al cerrar la página/app
+// Solo se liberará cuando el usuario presione explícitamente "Salir"
+window.addEventListener('beforeunload', () => {
+    // Este evento se mantiene vacío para evitar liberación automática
+    console.log('Página cerrada - No se libera código automáticamente');
+});
+
+// Nuevo evento para detectar cuando la app se cierra en modo PWA
+window.addEventListener('pagehide', () => {
+    console.log('App ocultada - No se libera código automáticamente');
+});
     configurarEventosGoogleDrive();
 }
 
@@ -4192,16 +4209,28 @@ function guardarDatos() {
 }
 
 function salir() {
-    // Liberar el código de acceso si existe
-    const codigoAcceso = sessionStorage.getItem('codigo_acceso_actual');
+    // Liberar el código de acceso si existe - ESTO ES LO NUEVO
+    const codigoAcceso = sessionStorage.getItem('codigo_acceso_actual') || localStorage.getItem('ultimo_acceso');
     if (codigoAcceso) {
-        liberarCodigo(codigoAcceso);
+        liberarCodigo(codigoAcceso).then(() => {
+            // Limpiar almacenamiento después de liberar el código
+            sessionStorage.removeItem('codigo_acceso_actual');
+            localStorage.removeItem('ultimo_acceso');
+            
+            // Continuar con el proceso de salida
+            completarSalida();
+        }).catch(error => {
+            console.error('Error al liberar código:', error);
+            // Continuar con salida aunque falle la liberación
+            completarSalida();
+        });
+    } else {
+        completarSalida();
     }
-    
-    // Limpiar solo la sesión actual
-    sessionStorage.removeItem('codigo_acceso_actual');
-    
-    // No limpiar el código de acceso persistente
+}
+
+function completarSalida() {
+    // Ocultar interfaz principal y mostrar acceso
     mainContainer.classList.add('hidden');
     accesoContainer.classList.remove('hidden');
     codigoAccesoInput.value = '';
@@ -4211,7 +4240,10 @@ function salir() {
         superusuarioActivo = false;
         if (superusuarioTimeout) clearTimeout(superusuarioTimeout);
     }
+    
+    console.log('Sesión cerrada y código liberado');
 }
+
 function crearElementoCliente(cliente) {
     const clienteItem = document.createElement('div');
     clienteItem.className = 'cliente-item';
