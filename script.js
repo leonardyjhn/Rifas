@@ -911,18 +911,29 @@ async function verificarAccesoPersistente() {
 function mostrarModalClientesPermanentes() {
     const modal = document.getElementById('clientes-permanentes-modal');
     modal.classList.remove('hidden');
-    paginaActualClientesPermanentes = 1; // Resetear a la primera página
+    paginaActualClientesPermanentes = 1;
     cargarClientesPermanentes();
     
-    // Configurar buscador
+    // Configurar buscador - CÓDIGO CORREGIDO
     document.getElementById('buscar-cliente-permanente').addEventListener('input', (e) => {
         const termino = e.target.value.toLowerCase();
         const filas = document.querySelectorAll('#lista-clientes-permanentes tr');
         
         // Mostrar/ocultar filas según el término de búsqueda
         filas.forEach(fila => {
-            const textoFila = fila.textContent.toLowerCase();
-            fila.style.display = textoFila.includes(termino) ? '' : 'none';
+            const celdas = fila.querySelectorAll('td');
+            if (celdas.length >= 3) {
+                const numeroCliente = celdas[0].textContent.toLowerCase();
+                const nombre = celdas[1].querySelector('input').value.toLowerCase();
+                const telefono = celdas[2].querySelector('input').value.toLowerCase();
+                
+                // Buscar en todos los campos
+                const coincide = numeroCliente.includes(termino) || 
+                               nombre.includes(termino) || 
+                               telefono.includes(termino);
+                
+                fila.style.display = coincide ? '' : 'none';
+            }
         });
     });
     
@@ -3398,31 +3409,61 @@ function enviarWhatsApp(cliente) {
     const rifa = rifas.find(r => r.id === cliente.rifaId);
     const plantilla = localStorage.getItem('rifasSucre_plantilla') || '';
     
-    // Limpiar los números para mostrar (quitar los estados)
+    // Separar números por estado
+    const numerosPagados = [];
+    const numerosApartados = [];
+    const numerosAbonados = [];
+    
+    cliente.numeros.split(',').forEach(numCompleto => {
+        const [num, estado, abono] = numCompleto.includes(':') ? 
+            numCompleto.split(':') : 
+            [numCompleto, cliente.estado, '0'];
+        
+        const numFormateado = num.padStart(3, '0');
+        const precioNumero = rifa ? (rifa.precio || 0) : 0;
+        const abonoActual = parseFloat(abono || 0);
+        
+        if (estado === 'pagado' || abonoActual >= precioNumero) {
+            numerosPagados.push(numFormateado);
+        } else if (estado === 'apartado' && abonoActual === 0) {
+            numerosApartados.push(numFormateado);
+        } else if (abonoActual > 0 && abonoActual < precioNumero) {
+            numerosAbonados.push(numFormateado);
+        }
+    });
+    
+    // Crear mensaje detallado para {estado}
+    let detalleEstados = '';
+    
+    if (numerosPagados.length > 0) {
+        detalleEstados += `✅ Pagados: ${numerosPagados.join(', ')}\n`;
+    }
+    
+    if (numerosAbonados.length > 0) {
+        detalleEstados += `💰 Abonados: ${numerosAbonados.join(', ')}\n`;
+    }
+    
+    if (numerosApartados.length > 0) {
+        detalleEstados += `⏳ Pendientes: ${numerosApartados.join(', ')}\n`;
+    }
+    
+    // Limpiar los números para mostrar en el mensaje principal
     const numerosLimpios = cliente.numeros.split(',').map(num => {
         return num.includes(':') ? num.split(':')[0] : num;
     }).join(', ');
     
     // CALCULAR ESTADO GENERAL CORRECTO
-    let numerosPagados = 0;
-    let numerosApartados = 0;
     const totalNumeros = cliente.numeros.split(',').length;
-    
-    cliente.numeros.split(',').forEach(numCompleto => {
-        const estado = numCompleto.includes(':') ? numCompleto.split(':')[1] : cliente.estado;
-        if (estado === 'pagado') numerosPagados++;
-        if (estado === 'apartado') numerosApartados++;
-    });
-    
     let estadoGeneral = 'mixto';
-    if (numerosPagados === totalNumeros) estadoGeneral = 'pagado';
-    if (numerosApartados === totalNumeros) estadoGeneral = 'apartado';
+    if (numerosPagados.length === totalNumeros) estadoGeneral = 'pagado';
+    if (numerosApartados.length === totalNumeros) estadoGeneral = 'apartado';
     
     let mensaje = plantilla
         .replace(/{nombre}/g, cliente.nombre)
         .replace(/{rifa}/g, rifa.nombre)
         .replace(/{numeros}/g, numerosLimpios)
-        .replace(/{estado}/g, estadoGeneral);  // ← ESTADO CORREGIDO
+        .replace(/{estado}/g, detalleEstados)  // ← ESTA ES LA LÍNEA IMPORTANTE
+        .replace(/{fecha}/g, new Date().toLocaleDateString());
     
     const url = `https://wa.me/${cliente.telefono}?text=${encodeURIComponent(mensaje)}`;
     window.open(url, '_blank');
@@ -3447,23 +3488,58 @@ function generarTicket(cliente) {
     `;
 
     // CALCULAR ESTADOS INDIVIDUALES DE LOS NÚMEROS
-    let numerosPagados = 0;
-    let numerosApartados = 0;
+    let numerosPagados = [];
+    let numerosApartados = [];
+    let numerosAbonados = [];
     
-    const numerosHTML = cliente.numeros.split(',').map(numCompleto => {
-        const [num, estadoIndividual] = numCompleto.includes(':') ? 
+    cliente.numeros.split(',').forEach(numCompleto => {
+        const [num, estadoIndividual, abono] = numCompleto.includes(':') ? 
             numCompleto.split(':') : 
-            [numCompleto, cliente.estado];
+            [numCompleto, cliente.estado, '0'];
             
-        // Contar números por estado
-        if (estadoIndividual === 'pagado') numerosPagados++;
-        if (estadoIndividual === 'apartado') numerosApartados++;
+        const numFormateado = num.padStart(3, '0');
+        const precioNumero = rifa ? (rifa.precio || 0) : 0;
+        const abonoActual = parseFloat(abono || 0);
+        
+        // Clasificar números por estado
+        if (estadoIndividual === 'pagado' || abonoActual >= precioNumero) {
+            numerosPagados.push(numFormateado);
+        } else if (abonoActual > 0 && abonoActual < precioNumero) {
+            numerosAbonados.push(numFormateado);
+        } else if (estadoIndividual === 'apartado') {
+            numerosApartados.push(numFormateado);
+        }
+    });
+
+    const numerosHTML = cliente.numeros.split(',').map(numCompleto => {
+        const [num, estadoIndividual, abono] = numCompleto.includes(':') ? 
+            numCompleto.split(':') : 
+            [numCompleto, cliente.estado, '0'];
+            
+        const numFormateado = num.padStart(3, '0');
+        const precioNumero = rifa ? (rifa.precio || 0) : 0;
+        const abonoActual = parseFloat(abono || 0);
+        
+        let estadoVisual = estadoIndividual;
+        let colorFondo = '#f1c40f'; // Amarillo por defecto (apartado)
+        let colorTexto = '#333';
+        
+        if (estadoIndividual === 'pagado' || abonoActual >= precioNumero) {
+            estadoVisual = 'pagado';
+            colorFondo = '#2ecc71'; // Verde
+            colorTexto = 'white';
+        } else if (abonoActual > 0 && abonoActual < precioNumero) {
+            estadoVisual = 'abonado';
+            colorFondo = '#e67e22'; // Naranja
+            colorTexto = 'white';
+        }
             
         return `<span style="display: inline-block; margin: 2px; padding: 2px 5px; 
                 border-radius: 3px; border: 1px solid #ddd; 
-                background: ${estadoIndividual === 'pagado' ? '#2ecc71' : '#f1c40f'}; 
-                color: ${estadoIndividual === 'pagado' ? 'white' : '#333'}">
-                ${num}
+                background: ${colorFondo}; 
+                color: ${colorTexto}"
+                title="Número ${numFormateado} - ${estadoVisual}">
+                ${numFormateado}
                 </span>`;
     }).join('');
 
@@ -3471,9 +3547,24 @@ function generarTicket(cliente) {
     let mensajeTicket = localStorage.getItem('plantillaTicketMensaje') || 
         'Cliente: {nombre}\nTeléfono: {telefono}\nNúmeros: {numeros}\nEstado: {estado}\nFecha: {fecha}\nTotal: {total}\nPagado: {pagado}\nDeuda: {deuda}\nHora: {hora}';
 
+    // Crear texto detallado de estados
+    let detalleEstados = '';
+    
+    if (numerosPagados.length > 0) {
+        detalleEstados += `✅ Pagados: ${numerosPagados.join(', ')}\n`;
+    }
+    
+    if (numerosAbonados.length > 0) {
+        detalleEstados += `💰 Abonados: ${numerosAbonados.join(', ')}\n`;
+    }
+    
+    if (numerosApartados.length > 0) {
+        detalleEstados += `⏳ Pendientes: ${numerosApartados.join(', ')}\n`;
+    }
+
     // Limpiar los números para mostrar en el mensaje (quitar los estados)
     const numerosLimpios = cliente.numeros.split(',').map(num => {
-        return num.includes(':') ? num.split(':')[0] : num;
+        return num.includes(':') ? num.split(':')[0].padStart(3, '0') : num.padStart(3, '0');
     }).join(', ');
 
     // Calcular montos
@@ -3481,20 +3572,28 @@ function generarTicket(cliente) {
     const total = totalNumeros * (rifa?.precio || 0);
 
     // Calcular pagado y deuda
-    let pagado = numerosPagados * (rifa?.precio || 0);
+    let pagado = numerosPagados.length * (rifa?.precio || 0);
+    // Sumar abonos de números abonados
+    pagado += numerosAbonados.reduce((sum, num) => {
+        const numData = cliente.numeros.split(',').find(n => n.includes(num));
+        const abono = numData && numData.includes(':') ? parseFloat(numData.split(':')[2] || 0) : 0;
+        return sum + abono;
+    }, 0);
+    
     let deuda = total - pagado;
 
-    // DETERMINAR ESTADO GENERAL (si todos son pagados = "pagado", si todos apartados = "apartado", si mezclados = "mixto")
+    // DETERMINAR ESTADO GENERAL
     let estadoGeneral = 'mixto';
-    if (numerosPagados === totalNumeros) estadoGeneral = 'pagado';
-    if (numerosApartados === totalNumeros) estadoGeneral = 'apartado';
+    if (numerosPagados.length === totalNumeros) estadoGeneral = 'pagado';
+    if (numerosApartados.length === totalNumeros && numerosAbonados.length === 0) estadoGeneral = 'apartado';
 
+    // Reemplazar {estado} con el detalle completo
     mensajeTicket = mensajeTicket
         .replace(/{nombre}/g, cliente.nombre)
         .replace(/{telefono}/g, cliente.telefono)
         .replace(/{rifa}/g, rifa.nombre)
         .replace(/{numeros}/g, numerosLimpios)
-        .replace(/{estado}/g, estadoGeneral)  // ← ESTADO CORREGIDO
+        .replace(/{estado}/g, detalleEstados)  // ← ESTA ES LA LÍNEA IMPORTANTE
         .replace(/{fecha}/g, new Date().toLocaleDateString())
         .replace(/{total}/g, total.toFixed(2))
         .replace(/{pagado}/g, pagado.toFixed(2))
@@ -3654,31 +3753,61 @@ function enviarRezagados(cliente) {
                      localStorage.getItem('rifasSucre_plantilla') || 
                      '¡Hola {nombre}! Recordatorio: Tus números {numeros} en la rifa "{rifa}" están como {estado}. Por favor completa tu pago. ¡Gracias!';
     
-    // Limpiar los números para mostrar (quitar los estados)
+    // Identificar números pendientes de pago
+    const numerosPendientes = [];
+    const numerosPagados = [];
+    const numerosAbonados = [];
+    
+    cliente.numeros.split(',').forEach(numCompleto => {
+        const [num, estado, abono] = numCompleto.includes(':') ? 
+            numCompleto.split(':') : 
+            [numCompleto, cliente.estado, '0'];
+        
+        const numFormateado = num.padStart(3, '0');
+        const precioNumero = rifa ? (rifa.precio || 0) : 0;
+        const abonoActual = parseFloat(abono || 0);
+        
+        if (estado === 'pagado' || abonoActual >= precioNumero) {
+            numerosPagados.push(numFormateado);
+        } else if (abonoActual > 0 && abonoActual < precioNumero) {
+            numerosAbonados.push(numFormateado);
+            numerosPendientes.push(numFormateado);
+        } else if (estado === 'apartado') {
+            numerosPendientes.push(numFormateado);
+        }
+    });
+    
+    // Crear mensaje detallado para {estado}
+    let detalleEstados = '';
+    
+    if (numerosPagados.length > 0) {
+        detalleEstados += `✅ Pagados: ${numerosPagados.join(', ')}\n`;
+    }
+    
+    if (numerosAbonados.length > 0) {
+        detalleEstados += `💰 Abonados: ${numerosAbonados.join(', ')}\n`;
+    }
+    
+    if (numerosPendientes.length > 0) {
+        detalleEstados += `⏳ Pendientes: ${numerosPendientes.join(', ')}\n`;
+    }
+    
+    // Limpiar los números para mostrar en el mensaje principal
     const numerosLimpios = cliente.numeros.split(',').map(num => {
         return num.includes(':') ? num.split(':')[0] : num;
     }).join(', ');
     
     // CALCULAR ESTADO GENERAL CORRECTO
-    let numerosPagados = 0;
-    let numerosApartados = 0;
     const totalNumeros = cliente.numeros.split(',').length;
-    
-    cliente.numeros.split(',').forEach(numCompleto => {
-        const estado = numCompleto.includes(':') ? numCompleto.split(':')[1] : cliente.estado;
-        if (estado === 'pagado') numerosPagados++;
-        if (estado === 'apartado') numerosApartados++;
-    });
-    
     let estadoGeneral = 'mixto';
-    if (numerosPagados === totalNumeros) estadoGeneral = 'pagado';
-    if (numerosApartados === totalNumeros) estadoGeneral = 'apartado';
+    if (numerosPagados.length === totalNumeros) estadoGeneral = 'pagado';
+    if (numerosPendientes.length === totalNumeros) estadoGeneral = 'apartado';
     
     let mensaje = plantilla
         .replace(/{nombre}/g, cliente.nombre)
         .replace(/{rifa}/g, rifa.nombre)
         .replace(/{numeros}/g, numerosLimpios)
-        .replace(/{estado}/g, estadoGeneral);  // ← ESTADO CORREGIDO
+        .replace(/{estado}/g, detalleEstados);  // ← ESTA ES LA LÍNEA IMPORTANTE
     
     const url = `https://wa.me/${cliente.telefono}?text=${encodeURIComponent(mensaje)}`;
     window.open(url, '_blank');
