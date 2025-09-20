@@ -1606,7 +1606,31 @@ async function restaurarDesdeGoogleDrive(fileId) {
         }
         
         const backupData = await response.json();
-        await restaurarDatosDesdeRespaldo(backupData);
+        
+        // RESTAURAR LOS DATOS DIRECTAMENTE (reemplaza la línea que da error)
+        rifas = backupData.rifas || [];
+        clientes = backupData.clientes || [];
+        clientesPermanentes = backupData.clientesPermanentes || [];
+        codigosValidos = backupData.codigos || backupData.codigosUsados || [];
+        codigosUsados = backupData.codigosUsados || [];
+        rifaActiva = backupData.rifaActiva || null;
+        
+        // Restaurar configuración si existe
+        if (backupData.configuracion) {
+            try {
+                const tx = db.transaction(['configuracion'], 'readwrite');
+                const store = tx.objectStore('configuracion');
+                await store.clear();
+                
+                for (const configItem of backupData.configuracion) {
+                    await store.put(configItem);
+                }
+            } catch (error) {
+                console.error('Error al restaurar configuración:', error);
+            }
+        }
+        
+        await guardarTodo();
         
         ocultarLoading();
         alert('Respaldo restaurado exitosamente desde Google Drive');
