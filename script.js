@@ -1508,66 +1508,22 @@ async function iniciarGoogleDriveRestore() {
 function mostrarModalSeleccionArchivo(archivos) {
     const modal = document.getElementById('google-drive-modal');
     const content = document.getElementById('google-drive-content');
-    const deleteContent = document.getElementById('google-drive-delete-content');
     
-    // Contenido para pestaña RESTAURAR
     content.innerHTML = `
         <h3>Selecciona un respaldo para restaurar</h3>
-        <div style="max-height: 300px; overflow-y: auto; margin-bottom: 15px;">
-            ${archivos.length > 0 ? archivos.map(archivo => `
-                <div class="archivo-item" data-id="${archivo.id}" style="padding: 10px; border-bottom: 1px solid #eee; cursor: pointer;">
+        <div style="max-height: 300px; overflow-y: auto;">
+            ${archivos.map(archivo => `
+                <div class="archivo-item" style="padding: 10px; border-bottom: 1px solid #eee; cursor: pointer;">
                     <strong>${archivo.name}</strong>
                     <div style="font-size: 12px; color: #666;">
-                        Creado: ${new Date(archivo.createdTime).toLocaleDateString()}
-                        <br>Modificado: ${new Date(archivo.modifiedTime).toLocaleDateString()}
+                        ${new Date(archivo.createdTime).toLocaleDateString()}
                     </div>
                 </div>
-            `).join('') : '<p>No se encontraron respaldos</p>'}
+            `).join('')}
         </div>
     `;
     
-    // Contenido para pestaña ELIMINAR
-    deleteContent.innerHTML = `
-        <h3>Selecciona archivos para eliminar</h3>
-        <div style="max-height: 300px; overflow-y: auto; margin-bottom: 15px;">
-            ${archivos.length > 0 ? archivos.map(archivo => `
-                <div class="archivo-delete-item" data-id="${archivo.id}" style="padding: 10px; border-bottom: 1px solid #eee;">
-                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                        <div>
-                            <strong>${archivo.name}</strong>
-                            <div style="font-size: 12px; color: #666;">
-                                ${new Date(archivo.createdTime).toLocaleDateString()}
-                            </div>
-                        </div>
-                        <button class="btn-eliminar-archivo" data-id="${archivo.id}" 
-                                style="padding: 5px 10px; background: #e74c3c; color: white; border: none; border-radius: 3px; cursor: pointer;">
-                            <i class="fas fa-trash"></i> Eliminar
-                        </button>
-                    </div>
-                </div>
-            `).join('') : '<p>No se encontraron respaldos</p>'}
-        </div>
-        ${archivos.length > 0 ? `
-        <div style="text-align: center; margin-top: 15px;">
-            <button id="btn-eliminar-multiples" style="padding: 8px 15px; background: #e74c3c; color: white; border: none; border-radius: 5px; cursor: pointer;">
-                <i class="fas fa-trash"></i> Eliminar Seleccionados
-            </button>
-        </div>
-        ` : ''}
-    `;
-    
-    // Configurar pestañas
-    document.querySelectorAll('.tab-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-            
-            this.classList.add('active');
-            document.getElementById(`${this.dataset.tab}-tab`).classList.add('active');
-        });
-    });
-    
-    // Eventos para restaurar
+    // Agregar event listeners a los elementos de archivo
     setTimeout(() => {
         document.querySelectorAll('.archivo-item').forEach((item, index) => {
             item.addEventListener('click', () => {
@@ -1575,64 +1531,6 @@ function mostrarModalSeleccionArchivo(archivos) {
                 modal.classList.add('hidden');
             });
         });
-    }, 100);
-    
-    // Eventos para eliminar
-    setTimeout(() => {
-        const archivosSeleccionados = new Set();
-        
-        // Selección individual de archivos
-        document.querySelectorAll('.archivo-delete-item').forEach(item => {
-            item.addEventListener('click', (e) => {
-                if (!e.target.classList.contains('btn-eliminar-archivo')) {
-                    item.classList.toggle('seleccionado');
-                    const archivoId = item.dataset.id;
-                    
-                    if (archivosSeleccionados.has(archivoId)) {
-                        archivosSeleccionados.delete(archivoId);
-                    } else {
-                        archivosSeleccionados.add(archivoId);
-                    }
-                    
-                    // Actualizar estilo visual
-                    item.style.backgroundColor = archivosSeleccionados.has(archivoId) ? '#fff3cd' : '';
-                }
-            });
-        });
-        
-        // Eliminación individual
-        document.querySelectorAll('.btn-eliminar-archivo').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                e.stopPropagation();
-                const archivoId = btn.dataset.id;
-                const archivo = archivos.find(a => a.id === archivoId);
-                
-                if (archivo && confirm(`¿Estás seguro de que deseas eliminar el archivo "${archivo.name}"?`)) {
-                    await eliminarArchivoGoogleDrive(archivoId);
-                    // Recargar la lista
-                    iniciarGoogleDriveRestore();
-                }
-            });
-        });
-        
-        // Eliminación múltiple
-        const btnEliminarMultiples = document.getElementById('btn-eliminar-multiples');
-        if (btnEliminarMultiples) {
-            btnEliminarMultiples.addEventListener('click', async () => {
-                if (archivosSeleccionados.size === 0) {
-                    alert('Selecciona al menos un archivo para eliminar');
-                    return;
-                }
-                
-                if (confirm(`¿Estás seguro de que deseas eliminar ${archivosSeleccionados.size} archivo(s)?`)) {
-                    for (const archivoId of archivosSeleccionados) {
-                        await eliminarArchivoGoogleDrive(archivoId);
-                    }
-                    // Recargar la lista
-                    iniciarGoogleDriveRestore();
-                }
-            });
-        }
     }, 100);
     
     modal.classList.remove('hidden');
@@ -4813,29 +4711,3 @@ window.addEventListener('load', function() {
         }
     }
 });
-
-// Función para eliminar archivo de Google Drive
-async function eliminarArchivoGoogleDrive(fileId) {
-    try {
-        const response = await fetch(
-            `https://www.googleapis.com/drive/v3/files/${fileId}`,
-            {
-                method: 'DELETE',
-                headers: {
-                    'Authorization': `Bearer ${googleAccessToken}`
-                }
-            }
-        );
-        
-        if (response.ok) {
-            alert('Archivo eliminado correctamente de Google Drive');
-            return true;
-        } else {
-            throw new Error('Error al eliminar archivo: ' + response.statusText);
-        }
-    } catch (error) {
-        console.error('Error al eliminar archivo de Google Drive:', error);
-        alert('Error al eliminar el archivo: ' + error.message);
-        return false;
-    }
-}
