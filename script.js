@@ -3425,11 +3425,29 @@ function enviarWhatsApp(cliente) {
         
         if (estado === 'pagado' || abonoActual >= precioNumero) {
             numerosPagados.push(numFormateado);
-        } else if (estado === 'apartado' && abonoActual === 0) {
-            numerosApartados.push(numFormateado);
         } else if (abonoActual > 0 && abonoActual < precioNumero) {
             numerosAbonados.push(numFormateado);
+        } else if (estado === 'apartado') {
+            numerosApartados.push(numFormateado);
         }
+    });
+    
+    // CALCULAR DEUDA TOTAL
+    let deudaTotal = 0;
+    cliente.numeros.split(',').forEach(numCompleto => {
+        const [num, estado, abono] = numCompleto.includes(':') ? 
+            numCompleto.split(':') : 
+            [numCompleto, cliente.estado, '0'];
+        
+        const abonoActual = parseFloat(abono || 0);
+        const precioNumero = rifa ? (rifa.precio || 0) : 0;
+        
+        if (estado === 'apartado') {
+            deudaTotal += precioNumero;
+        } else if (estado === 'abonado') {
+            deudaTotal += (precioNumero - abonoActual);
+        }
+        // Los números pagados no generan deuda
     });
     
     // Crear mensaje detallado para {estado}
@@ -3462,8 +3480,9 @@ function enviarWhatsApp(cliente) {
         .replace(/{nombre}/g, cliente.nombre)
         .replace(/{rifa}/g, rifa.nombre)
         .replace(/{numeros}/g, numerosLimpios)
-        .replace(/{estado}/g, detalleEstados)  // ← ESTA ES LA LÍNEA IMPORTANTE
-        .replace(/{fecha}/g, new Date().toLocaleDateString());
+        .replace(/{estado}/g, detalleEstados)
+        .replace(/{fecha}/g, new Date().toLocaleDateString())
+        .replace(/{deuda}/g, deudaTotal.toFixed(2));  // ← NUEVA LÍNEA
     
     const url = `https://wa.me/${cliente.telefono}?text=${encodeURIComponent(mensaje)}`;
     window.open(url, '_blank');
@@ -3777,6 +3796,24 @@ function enviarRezagados(cliente) {
         }
     });
     
+    // CALCULAR DEUDA TOTAL
+    let deudaTotal = 0;
+    cliente.numeros.split(',').forEach(numCompleto => {
+        const [num, estado, abono] = numCompleto.includes(':') ? 
+            numCompleto.split(':') : 
+            [numCompleto, cliente.estado, '0'];
+        
+        const abonoActual = parseFloat(abono || 0);
+        const precioNumero = rifa ? (rifa.precio || 0) : 0;
+        
+        if (estado === 'apartado') {
+            deudaTotal += precioNumero;
+        } else if (estado === 'abonado') {
+            deudaTotal += (precioNumero - abonoActual);
+        }
+        // Los números pagados no generan deuda
+    });
+    
     // Crear mensaje detallado para {estado}
     let detalleEstados = '';
     
@@ -3807,7 +3844,8 @@ function enviarRezagados(cliente) {
         .replace(/{nombre}/g, cliente.nombre)
         .replace(/{rifa}/g, rifa.nombre)
         .replace(/{numeros}/g, numerosLimpios)
-        .replace(/{estado}/g, detalleEstados);  // ← ESTA ES LA LÍNEA IMPORTANTE
+        .replace(/{estado}/g, detalleEstados)
+        .replace(/{deuda}/g, deudaTotal.toFixed(2));  // ← NUEVA LÍNEA
     
     const url = `https://wa.me/${cliente.telefono}?text=${encodeURIComponent(mensaje)}`;
     window.open(url, '_blank');
