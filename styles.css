@@ -1202,3 +1202,28 @@ button i {
         padding: 10px;
     }
 }
+
+/* Estilos para el modal de expiración */
+#expirado-modal .modal-content {
+    text-align: center;
+    max-width: 400px;
+}
+
+#expirado-modal h2 {
+    color: #e74c3c;
+    margin-bottom: 15px;
+}
+
+#expirado-modal p {
+    margin-bottom: 20px;
+    line-height: 1.5;
+}
+
+#btn-entendido-expirado {
+    background-color: #3498db;
+    padding: 10px 20px;
+}
+
+#btn-entendido-expirado:hover {
+    background-color: #2980b9;
+}
