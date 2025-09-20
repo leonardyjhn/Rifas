@@ -207,17 +207,15 @@ async function obtenerCodigosActivos() {
 
 async function liberarCodigo(codigo) {
     try {
-        const dispositivoId = obtenerIdDispositivo();
-        console.log('Intentando liberar código:', codigo, 'para dispositivo:', dispositivoId);
+        console.log('Intentando liberar código:', codigo);
         
         const resultado = await supabaseRequest(`codigos_acceso?codigo=eq.${codigo}&select=*`);
         
         if (resultado.length > 0) {
             const codigoObj = resultado[0];
             
-            // Liberar si el código está siendo usado por este dispositivo o cualquier dispositivo
-            // (esto es más permisivo para asegurar la liberación en móviles)
-            if (codigoObj.dispositivo_id === dispositivoId || codigoObj.dispositivo_id) {
+            // Verificar si el código está siendo usado por algún dispositivo
+            if (codigoObj.dispositivo_id) {
                 await supabaseRequest(`codigos_acceso?codigo=eq.${codigo}`, {
                     method: 'PATCH',
                     body: JSON.stringify({
@@ -228,7 +226,7 @@ async function liberarCodigo(codigo) {
                 console.log('✅ Código liberado exitosamente:', codigo);
                 return true;
             } else {
-                console.log('Código no estaba en uso o no pertenece a este dispositivo');
+                console.log('Código no estaba en uso');
                 return true; // Considerar éxito aunque no estuviera en uso
             }
         }
@@ -921,7 +919,39 @@ async function verificarAccesoPersistente() {
     }
 }
 
-
+// Función para liberar código desde el botón
+async function liberarCodigoAcceso() {
+    const codigo = codigoAccesoInput.value.trim();
+    
+    if (!codigo) {
+        alert('Ingrese un código de acceso para liberar');
+        return;
+    }
+    
+    if (codigo.length !== 8) {
+        alert('El código debe tener 8 dígitos');
+        return;
+    }
+    
+    try {
+        mostrarLoading('Liberando código...');
+        
+        const liberado = await liberarCodigo(codigo);
+        
+        ocultarLoading();
+        
+        if (liberado) {
+            alert('✅ Código liberado exitosamente. Ahora puedes usarlo en otro dispositivo.');
+            codigoAccesoInput.value = ''; // Limpiar el campo
+        } else {
+            alert('❌ No se pudo liberar el código. Verifica que el código sea correcto.');
+        }
+    } catch (error) {
+        ocultarLoading();
+        console.error('Error al liberar código:', error);
+        alert('❌ Error al liberar el código. Intenta nuevamente.');
+    }
+}
 
 function mostrarModalClientesPermanentes() {
     const modal = document.getElementById('clientes-permanentes-modal');
@@ -1289,6 +1319,12 @@ function configurarEventos() {
     // Acceso
     if (btnAcceder) btnAcceder.addEventListener('click', validarAcceso);
     if (btnSuperusuario) btnSuperusuario.addEventListener('click', mostrarModalSuperusuario);
+    
+    // NUEVO: Botón para liberar código
+    const btnLiberarCodigo = document.getElementById('btn-liberar-codigo');
+    if (btnLiberarCodigo) {
+        btnLiberarCodigo.addEventListener('click', liberarCodigoAcceso);
+    }
     
     // Contacto con verificación
     if (btnContacto) {
