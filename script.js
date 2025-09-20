@@ -465,6 +465,12 @@ let clientesPermanentes = [];
 let paginaActualClientesPermanentes = 1;
 const clientesPermanentesPorPagina = 20;
 
+// Variables para Google Drive
+let googleAccessToken = null;
+let googleUserEmail = null;
+const GOOGLE_CLIENT_ID = '1089898770635-bpcf5c9v4ddo0d1ljas3kfsiki6ktvj0.apps.googleusercontent.com';
+const GOOGLE_SCOPES = 'https://www.googleapis.com/auth/drive.file';
+
 // Configuración de Supabase
 const SUPABASE_URL = 'https://cnybagckrosizntlafip.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNueWJhZ2Nrcm9zaXpudGxhZmlwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTgyMTE0OTYsImV4cCI6MjA3Mzc4NzQ5Nn0.m5rsYhD66yyqOTf3N32qXUzaXTwTnPmNRM-Ie09T1Sc';
@@ -1349,6 +1355,329 @@ function configurarEventos() {
             );
         }
     });
+    configurarEventosGoogleDrive();
+}
+
+// Configurar eventos de Google Drive
+function configurarEventosGoogleDrive() {
+    const btnGoogleBackup = document.getElementById('btn-google-drive-backup');
+    const btnGoogleRestore = document.getElementById('btn-google-drive-restore');
+    const btnConnectGoogle = document.getElementById('btn-connect-google');
+    const googleEmailInput = document.getElementById('google-email');
+    
+    if (btnGoogleBackup) {
+        btnGoogleBackup.addEventListener('click', iniciarGoogleDriveBackup);
+    }
+    
+    if (btnGoogleRestore) {
+        btnGoogleRestore.addEventListener('click', iniciarGoogleDriveRestore);
+    }
+    
+    if (btnConnectGoogle) {
+        btnConnectGoogle.addEventListener('click', iniciarAutenticacionGoogle);
+    }
+    
+    // Cargar email guardado si existe
+    const savedEmail = localStorage.getItem('google_user_email');
+    if (savedEmail && googleEmailInput) {
+        googleEmailInput.value = savedEmail;
+        googleUserEmail = savedEmail;
+    }
+    
+    // Verificar si ya hay un token válido
+    const savedToken = localStorage.getItem('google_access_token');
+    const tokenExpiry = localStorage.getItem('google_token_expiry');
+    
+    if (savedToken && tokenExpiry && new Date().getTime() < parseInt(tokenExpiry)) {
+        googleAccessToken = savedToken;
+        actualizarEstadoGoogleDrive('Conectado a Google Drive', 'success');
+    }
+}
+
+// Iniciar autenticación con Google
+function iniciarAutenticacionGoogle() {
+    const emailInput = document.getElementById('google-email');
+    if (emailInput) {
+        const email = emailInput.value.trim();
+        if (!email) {
+            alert('Por favor ingresa tu correo electrónico de Google');
+            return;
+        }
+        
+        localStorage.setItem('google_user_email', email);
+        googleUserEmail = email;
+    }
+    
+    // Iniciar flujo de autenticación OAuth2
+    const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+        `client_id=${GOOGLE_CLIENT_ID}` +
+        `&redirect_uri=${encodeURIComponent(window.location.origin)}` +
+        `&response_type=token` +
+        `&scope=${encodeURIComponent(GOOGLE_SCOPES)}` +
+        `&include_granted_scopes=true` +
+        `&state=google_drive_auth`;
+    
+    // Abrir ventana de autenticación
+    const authWindow = window.open(authUrl, 'GoogleAuth', 'width=500,height=600');
+    
+    // Verificar periódicamente si la ventana se cerró
+    const checkWindow = setInterval(() => {
+        if (authWindow.closed) {
+            clearInterval(checkWindow);
+            verificarAutenticacionGoogle();
+        }
+    }, 500);
+}
+
+// Verificar autenticación de Google
+function verificarAutenticacionGoogle() {
+    const token = localStorage.getItem('google_access_token');
+    if (token) {
+        googleAccessToken = token;
+        actualizarEstadoGoogleDrive('Conectado a Google Drive', 'success');
+    } else {
+        actualizarEstadoGoogleDrive('No conectado. Haz clic en "Conectar con Google"', 'error');
+    }
+}
+
+// Actualizar estado de Google Drive en la UI
+function actualizarEstadoGoogleDrive(mensaje, tipo) {
+    const statusElement = document.getElementById('google-status');
+    if (statusElement) {
+        statusElement.textContent = mensaje;
+        statusElement.style.color = tipo === 'success' ? 'green' : 'red';
+    }
+}
+
+// Iniciar proceso de backup a Google Drive
+async function iniciarGoogleDriveBackup() {
+    if (!googleAccessToken) {
+        alert('Primero debes conectar con Google Drive');
+        iniciarAutenticacionGoogle();
+        return;
+    }
+    
+    try {
+        mostrarLoading('Creando respaldo en Google Drive...');
+        
+        // Crear el respaldo
+        const backupData = await crearDatosRespaldo();
+        const blob = new Blob([JSON.stringify(backupData, null, 2)], { 
+            type: 'application/json' 
+        });
+        
+        // Subir a Google Drive
+        const fileName = `respaldo_rifas_sucre_${new Date().toISOString().slice(0, 10)}.json`;
+        const fileId = await subirArchivoGoogleDrive(blob, fileName);
+        
+        ocultarLoading();
+        alert(`Respaldo guardado exitosamente en Google Drive\n\nArchivo: ${fileName}`);
+    } catch (error) {
+        console.error('Error al guardar en Google Drive:', error);
+        ocultarLoading();
+        alert('Error al guardar en Google Drive: ' + error.message);
+    }
+}
+
+// Iniciar proceso de restauración desde Google Drive
+async function iniciarGoogleDriveRestore() {
+    if (!googleAccessToken) {
+        alert('Primero debes conectar con Google Drive');
+        iniciarAutenticacionGoogle();
+        return;
+    }
+    
+    try {
+        // Obtener lista de archivos de respaldo
+        const archivos = await listarArchivosGoogleDrive();
+        
+        if (archivos.length === 0) {
+            alert('No se encontraron respaldos en tu Google Drive');
+            return;
+        }
+        
+        // Mostrar modal para seleccionar archivo
+        mostrarModalSeleccionArchivo(archivos);
+    } catch (error) {
+        console.error('Error al listar archivos de Google Drive:', error);
+        alert('Error al acceder a Google Drive: ' + error.message);
+    }
+}
+
+// Mostrar modal para seleccionar archivo de respaldo
+function mostrarModalSeleccionArchivo(archivos) {
+    const modal = document.getElementById('google-drive-modal');
+    const content = document.getElementById('google-drive-content');
+    
+    content.innerHTML = `
+        <h3>Selecciona un respaldo para restaurar</h3>
+        <div style="max-height: 300px; overflow-y: auto;">
+            ${archivos.map(archivo => `
+                <div class="archivo-item" style="padding: 10px; border-bottom: 1px solid #eee; cursor: pointer;">
+                    <strong>${archivo.name}</strong>
+                    <div style="font-size: 12px; color: #666;">
+                        ${new Date(archivo.createdTime).toLocaleDateString()}
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+    
+    // Agregar event listeners a los elementos de archivo
+    setTimeout(() => {
+        document.querySelectorAll('.archivo-item').forEach((item, index) => {
+            item.addEventListener('click', () => {
+                restaurarDesdeGoogleDrive(archivos[index].id);
+                modal.classList.add('hidden');
+            });
+        });
+    }, 100);
+    
+    modal.classList.remove('hidden');
+}
+
+// Subir archivo a Google Drive
+async function subirArchivoGoogleDrive(blob, fileName) {
+    const formData = new FormData();
+    formData.append('metadata', new Blob([JSON.stringify({
+        name: fileName,
+        mimeType: 'application/json',
+        parents: ['root']
+    })], { type: 'application/json' }));
+    
+    formData.append('file', blob);
+    
+    const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+        method: 'POST',
+        headers: {
+            'Authorization': `Bearer ${googleAccessToken}`
+        },
+        body: formData
+    });
+    
+    if (!response.ok) {
+        throw new Error('Error al subir archivo: ' + response.statusText);
+    }
+    
+    const data = await response.json();
+    return data.id;
+}
+
+// Listar archivos de respaldo en Google Drive
+async function listarArchivosGoogleDrive() {
+    const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files?` +
+        `q=name contains 'respaldo_rifas_sucre' and mimeType='application/json'&` +
+        `fields=files(id,name,createdTime,modifiedTime)&` +
+        `orderBy=createdTime desc`,
+        {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer ${googleAccessToken}`
+            }
+        }
+    );
+    
+    if (!response.ok) {
+        throw new Error('Error al listar archivos: ' + response.statusText);
+    }
+    
+    const data = await response.json();
+    return data.files;
+}
+
+// Descargar y restaurar archivo desde Google Drive
+async function restaurarDesdeGoogleDrive(fileId) {
+    try {
+        mostrarLoading('Restaurando desde Google Drive...');
+        
+        const response = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+            {
+                method: 'GET',
+                headers: {
+                    'Authorization': `Bearer ${googleAccessToken}`
+                }
+            }
+        );
+        
+        if (!response.ok) {
+            throw new Error('Error al descargar archivo: ' + response.statusText);
+        }
+        
+        const backupData = await response.json();
+        await restaurarDatosDesdeRespaldo(backupData);
+        
+        ocultarLoading();
+        alert('Respaldo restaurado exitosamente desde Google Drive');
+        mostrarSeccion('rifas');
+    } catch (error) {
+        console.error('Error al restaurar desde Google Drive:', error);
+        ocultarLoading();
+        alert('Error al restaurar desde Google Drive: ' + error.message);
+    }
+}
+
+// Función para mostrar loading
+function mostrarLoading(mensaje) {
+    let loadingDiv = document.getElementById('loading-descarga');
+    if (!loadingDiv) {
+        loadingDiv = document.createElement('div');
+        loadingDiv.id = 'loading-descarga';
+        document.body.appendChild(loadingDiv);
+    }
+    
+    loadingDiv.innerHTML = `
+        <div style="
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 9999;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            color: white;
+        ">
+            <div style="font-size: 20px; margin-bottom: 20px;">
+                <i class="fas fa-spinner fa-spin"></i> ${mensaje}
+            </div>
+            <div style="font-size: 14px;">Por favor espere...</div>
+        </div>
+    `;
+}
+
+// Función para ocultar loading
+function ocultarLoading() {
+    const loadingDiv = document.getElementById('loading-descarga');
+    if (loadingDiv) {
+        loadingDiv.remove();
+    }
+}
+
+// Crear datos de respaldo (ya existente, pero la agregamos por si acaso)
+async function crearDatosRespaldo() {
+    try {
+        const configuracion = await obtenerTodosDatos('configuracion');
+        const codigos = await obtenerTodosDatos('codigos');
+        
+        return {
+            rifas,
+            clientes,
+            clientesPermanentes, 
+            codigos,
+            codigosUsados,
+            configuracion,
+            rifaActiva,
+            fechaRespaldo: new Date().toISOString()
+        };
+    } catch (error) {
+        console.error('Error al crear respaldo:', error);
+        throw error;
+    }
 }
 
 function mostrarModalCambiarNombre() {
@@ -3404,13 +3733,33 @@ function mostrarRespaldo() {
         <p>Aquí puedes crear una copia de seguridad de todos tus datos o restaurar desde una copia previa.</p>
         
         <div class="respaldo-acciones">
-            <button id="btn-crear-respaldo"><i class="fas fa-save"></i> Crear Respaldo</button>
-            <button id="btn-restaurar-respaldo"><i class="fas fa-upload"></i> Restaurar Respaldo</button>
+            <button id="btn-crear-respaldo"><i class="fas fa-save"></i> Crear Respaldo Local</button>
+            <button id="btn-restaurar-respaldo"><i class="fas fa-upload"></i> Restaurar Respaldo Local</button>
+            <button id="btn-google-drive-backup"><i class="fab fa-google-drive"></i> Guardar en Google Drive</button>
+            <button id="btn-google-drive-restore"><i class="fab fa-google-drive"></i> Restaurar desde Google Drive</button>
+        </div>
+        
+        <div id="google-drive-section" style="margin-top: 20px; padding: 15px; background: #f9f9f9; border-radius: 5px;">
+            <h3>Conexión con Google Drive</h3>
+            <div class="form-group">
+                <label for="google-email">Correo electrónico de Google:</label>
+                <input type="email" id="google-email" placeholder="tu.correo@gmail.com" style="width: 100%; padding: 10px;">
+            </div>
+            <button id="btn-connect-google" style="background: #4285F4; color: white;">
+                <i class="fab fa-google"></i> Conectar con Google
+            </button>
+            <div id="google-status" style="margin-top: 10px; font-size: 14px;"></div>
         </div>
     `;
     
     document.getElementById('btn-crear-respaldo').addEventListener('click', crearRespaldo);
     document.getElementById('btn-restaurar-respaldo').addEventListener('click', restaurarRespaldo);
+    
+    // Configurar eventos de Google Drive
+    configurarEventosGoogleDrive();
+    
+    // Actualizar estado de Google Drive
+    verificarAutenticacionGoogle();
 }
 
 async function crearRespaldo() {
@@ -4314,3 +4663,27 @@ async function agregarNumerosACliente(cliente, modal) {
     
     alert(`Se agregaron ${numerosArray.length} números al cliente ${cliente.nombre}`);
 }
+// Manejar la respuesta de OAuth de Google
+window.addEventListener('load', function() {
+    // Verificar si hay un token de acceso en la URL (respuesta de OAuth)
+    const hash = window.location.hash;
+    if (hash.includes('access_token') && hash.includes('state=google_drive_auth')) {
+        const params = new URLSearchParams(hash.substring(1));
+        const accessToken = params.get('access_token');
+        const expiresIn = params.get('expires_in');
+        
+        if (accessToken) {
+            // Guardar el token y su tiempo de expiración
+            const expiryTime = new Date().getTime() + (parseInt(expiresIn) * 1000);
+            localStorage.setItem('google_access_token', accessToken);
+            localStorage.setItem('google_token_expiry', expiryTime.toString());
+            googleAccessToken = accessToken;
+            
+            // Actualizar UI
+            actualizarEstadoGoogleDrive('Conectado a Google Drive', 'success');
+            
+            // Limpiar URL
+            window.history.replaceState({}, document.title, window.location.pathname);
+        }
+    }
+});
