@@ -484,8 +484,22 @@ button i {
 /* Respaldo */
 .respaldo-acciones {
     display: flex;
+    flex-direction: column;
     gap: 10px;
     margin-top: 20px;
+}
+
+/* Para pantallas más grandes, mantener diseño horizontal */
+@media (min-width: 768px) {
+    .respaldo-acciones {
+        flex-direction: row;
+        flex-wrap: wrap;
+    }
+    
+    .respaldo-acciones button {
+        flex: 1;
+        min-width: 200px;
+    }
 }
 
 .codigo-box {
@@ -1103,4 +1117,42 @@ button i {
 
 #manual-content strong {
     color: #2c3e50;
+}
+
+/* Estilos responsivos para la tabla de clientes permanentes */
+#tabla-clientes-permanentes {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+#tabla-clientes-permanentes th,
+#tabla-clientes-permanentes td {
+    padding: 8px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+/* Hacer la tabla responsiva en móviles */
+@media (max-width: 768px) {
+    #tabla-clientes-permanentes {
+        display: block;
+        overflow-x: auto;
+        white-space: nowrap;
+    }
+    
+    .editar-telefono {
+        width: 120px !important; /* Asegurar que los campos de teléfono tengan suficiente espacio */
+    }
+    
+    /* Mejorar visualización de botones en móviles */
+    .btn-guardar-cliente, 
+    .btn-eliminar-cliente {
+        padding: 6px 8px !important;
+        font-size: 12px !important;
+    }
+}
+
+/* Estilo específico para campos de teléfono */
+.editar-telefono {
+    font-family: monospace; /* Mejor visualización de números */
 }
