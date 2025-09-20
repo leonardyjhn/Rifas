@@ -1052,6 +1052,25 @@ async function actualizarClientePermanente(id, nombre, telefono) {
         const index = clientesPermanentes.findIndex(c => c.id === id);
         if (index === -1) return;
         
+        // Normalizar el teléfono para comparación
+        const telefonoNormalizado = normalizarTelefono(telefono);
+        const telefonoActualNormalizado = normalizarTelefono(clientesPermanentes[index].telefono);
+        
+        // Verificar si el nuevo número ya existe en OTRO cliente (no en el actual)
+        if (telefonoNormalizado !== telefonoActualNormalizado) {
+            const clienteExistente = clientesPermanentes.find(c => 
+                c.id !== id && normalizarTelefono(c.telefono) === telefonoNormalizado
+            );
+            
+            if (clienteExistente) {
+                alert(`❌ Ya existe otro cliente permanente con este número de teléfono:\n\n` +
+                      `Cliente: ${clienteExistente.nombre}\n` +
+                      `N°: ${clienteExistente.numeroCliente}\n` +
+                      `Teléfono: ${clienteExistente.telefono}`);
+                return; // Detener la actualización
+            }
+        }
+        
         // Guardar el número de cliente antes de actualizar
         const numeroCliente = clientesPermanentes[index].numeroCliente;
         
@@ -1081,7 +1100,7 @@ async function actualizarClientePermanente(id, nombre, telefono) {
         // Actualizar variables locales
         clientes = nuevosClientes;
         
-        alert('Cliente actualizado en ambas bases de datos');
+        alert('✅ Cliente actualizado en ambas bases de datos');
         cargarClientesPermanentes();
         actualizarListaClientes();
     } catch (error) {
@@ -3772,6 +3791,15 @@ if (item.estado === 'pagado') {
     const clienteAcciones = document.createElement('div');
 clienteAcciones.className = 'cliente-acciones';
 
+const btnAgregarNumeros = document.createElement('button');
+    btnAgregarNumeros.innerHTML = '<i class="fas fa-plus"></i> Agregar';
+    btnAgregarNumeros.style.backgroundColor = '#3498db';
+    btnAgregarNumeros.addEventListener('click', (e) => {
+        e.stopPropagation();
+        mostrarModalAgregarNumeros(cliente);
+    });
+    clienteAcciones.appendChild(btnAgregarNumeros);
+
 // Agrega el botón de imprimir factura
 const btnImprimirFactura = document.createElement('button');
 btnImprimirFactura.innerHTML = '<i class="fas fa-print"></i> Factura';
@@ -3822,12 +3850,7 @@ btnWhatsApp.innerHTML = '<i class="fab fa-whatsapp"></i> WhatsApp';
         generarTicket(cliente);
     });
     
-    const btnEditar = document.createElement('button');
-    btnEditar.innerHTML = '<i class="fas fa-edit"></i> Editar';
-    btnEditar.addEventListener('click', (e) => {
-        e.stopPropagation();
-        mostrarModalEditarCliente(cliente);
-    });
+    
     
     const btnEliminar = document.createElement('button');
 btnEliminar.textContent = 'Eliminar';
@@ -3844,7 +3867,7 @@ btnEliminar.addEventListener('click', (e) => {
     
     clienteAcciones.appendChild(btnWhatsApp);
     clienteAcciones.appendChild(btnTicket);
-    clienteAcciones.appendChild(btnEditar);
+    
     clienteAcciones.appendChild(btnEliminar);
     
     clienteItem.appendChild(clienteHeader);
@@ -4099,4 +4122,195 @@ function generarFactura(cliente, ancho) {
     `);
     ventanaImpresion.document.close();
 
+}
+
+function mostrarModalAgregarNumeros(cliente) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,0.7);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 1000;
+    `;
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 500px;">
+            <span class="close-modal" style="position: absolute; top: 15px; right: 15px; font-size: 24px; cursor: pointer; color: #7f8c8d;">&times;</span>
+            <h2>Agregar Números a ${cliente.nombre}</h2>
+            
+            <div class="form-group">
+                <label for="nuevos-numeros">Números a agregar (separados por comas o rangos):</label>
+                <input type="text" id="nuevos-numeros" placeholder="Ej: 015, 020-025, 030" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
+            </div>
+            
+            <div class="form-group">
+                <label for="estado-nuevos-numeros">Estado de los nuevos números:</label>
+                <select id="estado-nuevos-numeros" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 5px;">
+                    <option value="apartado">Apartado</option>
+                    <option value="pagado">Pagado</option>
+                </select>
+            </div>
+            
+            <div style="display: flex; gap: 10px; margin-top: 20px;">
+                <button id="btn-agregar-numeros-confirmar" style="padding: 10px 20px; background: #27ae60; color: white; border: none; border-radius: 5px; cursor: pointer; flex: 1;">
+                    <i class="fas fa-plus"></i> Agregar Números
+                </button>
+                <button id="btn-cancelar-agregar" style="padding: 10px 20px; background: #e74c3c; color: white; border: none; border-radius: 5px; cursor: pointer; flex: 1;">
+                    <i class="fas fa-times"></i> Cancelar
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Configurar eventos
+    modal.querySelector('.close-modal').addEventListener('click', () => {
+        modal.remove();
+    });
+    
+    modal.querySelector('#btn-cancelar-agregar').addEventListener('click', () => {
+        modal.remove();
+    });
+    
+    modal.querySelector('#btn-agregar-numeros-confirmar').addEventListener('click', async () => {
+        await agregarNumerosACliente(cliente, modal);
+    });
+}
+
+// NUEVA FUNCIÓN: Agregar números a cliente existente
+async function agregarNumerosACliente(cliente, modal) {
+    const nuevosNumerosInput = document.getElementById('nuevos-numeros').value.trim();
+    const estadoNuevo = document.getElementById('estado-nuevos-numeros').value;
+    
+    if (!nuevosNumerosInput) {
+        alert('Por favor ingresa los números a agregar');
+        return;
+    }
+    
+    const rifa = rifas.find(r => r.id === cliente.rifaId);
+    if (!rifa) {
+        alert('No se encontró la rifa asociada al cliente');
+        return;
+    }
+    
+    // Procesar números (soporte para rangos y comas)
+    const numerosProcesados = [];
+    const partes = nuevosNumerosInput.split(/[,.\s]+/);
+    
+    for (const parte of partes) {
+        if (!parte) continue;
+        
+        if (parte.includes('-')) {
+            const [inicioStr, finStr] = parte.split('-');
+            const inicio = parseInt(inicioStr);
+            const fin = parseInt(finStr);
+            
+            if (isNaN(inicio) || isNaN(fin)) {
+                alert(`El rango "${parte}" no es válido`);
+                return;
+            }
+            
+            if (inicio > fin) {
+                alert(`El rango "${parte}" está invertido`);
+                return;
+            }
+            
+            for (let i = inicio; i <= fin; i++) {
+                numerosProcesados.push(i.toString());
+            }
+        } else {
+            numerosProcesados.push(parte);
+        }
+    }
+    
+    // Eliminar duplicados
+    const numerosArray = [...new Set(numerosProcesados)];
+    
+    if (numerosArray.length === 0) {
+        alert('No se han ingresado números válidos');
+        return;
+    }
+    
+    // Validar números
+    for (const num of numerosArray) {
+        if (isNaN(num) || num === '') {
+            alert(`El número "${num}" no es válido`);
+            return;
+        }
+        
+        const numFormateado = parseInt(num).toString().padStart(3, '0');
+        if (parseInt(numFormateado) >= rifa.totalNumeros) {
+            alert(`El número ${numFormateado} excede el total de números de la rifa (${rifa.totalNumeros})`);
+            return;
+        }
+    }
+    
+    // Verificar disponibilidad
+    const numerosOcupados = {};
+    const clientesRifa = clientes.filter(c => c.rifaId === cliente.rifaId);
+    
+    clientesRifa.forEach(clienteRifa => {
+        clienteRifa.numeros.split(',').forEach(num => {
+            const numFormateado = parseInt(num.includes(':') ? num.split(':')[0] : num).toString().padStart(3, '0');
+            numerosOcupados[numFormateado] = true;
+        });
+    });
+    
+    const numerosNoDisponibles = numerosArray.filter(num => {
+        const numFormateado = parseInt(num).toString().padStart(3, '0');
+        return numerosOcupados[numFormateado];
+    });
+    
+    if (numerosNoDisponibles.length > 0) {
+        alert(`Los siguientes números ya están ocupados: ${numerosNoDisponibles.join(', ')}`);
+        return;
+    }
+    
+    // Verificar si el cliente ya tiene alguno de estos números
+    const numerosClienteActual = cliente.numeros.split(',').map(num => {
+        return num.includes(':') ? num.split(':')[0] : num;
+    });
+    
+    const numerosDuplicados = numerosArray.filter(num => {
+        const numFormateado = parseInt(num).toString().padStart(3, '0');
+        return numerosClienteActual.includes(numFormateado);
+    });
+    
+    if (numerosDuplicados.length > 0) {
+        alert(`El cliente ya tiene los siguientes números: ${numerosDuplicados.join(', ')}`);
+        return;
+    }
+    
+    // Preparar nuevos números con el formato correcto
+    const precioNumero = rifa.precio || 0;
+    const nuevosNumerosFormateados = numerosArray.map(num => {
+        const numFormateado = parseInt(num).toString().padStart(3, '0');
+        const abonoInicial = (estadoNuevo === 'pagado') ? precioNumero : 0;
+        return `${numFormateado}:${estadoNuevo}:${abonoInicial}`;
+    });
+    
+    // Agregar los nuevos números a los existentes
+    const numerosActualizados = [...cliente.numeros.split(','), ...nuevosNumerosFormateados]
+        .sort((a, b) => parseInt(a.split(':')[0]) - parseInt(b.split(':')[0]))
+        .join(',');
+    
+    // Actualizar cliente
+    cliente.numeros = numerosActualizados;
+    
+    // Guardar cambios
+    await guardarTodo();
+    
+    // Cerrar modal y actualizar lista
+    modal.remove();
+    actualizarListaClientes();
+    
+    alert(`Se agregaron ${numerosArray.length} números al cliente ${cliente.nombre}`);
 }
