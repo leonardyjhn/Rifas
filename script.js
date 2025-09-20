@@ -125,7 +125,7 @@ async function verificarCodigoEnDB(codigo) {
         // Obtener el ID del dispositivo actual
         const dispositivoId = obtenerIdDispositivo();
         
-        // Verificar si el código existe
+        // Verificar si el código existe y no está siendo usado por otro dispositivo
         const ahora = new Date().toISOString();
         const resultado = await supabaseRequest(`codigos_acceso?codigo=eq.${codigo}&select=*`);
         
@@ -142,24 +142,13 @@ async function verificarCodigoEnDB(codigo) {
             return false;
         }
         
-        // Si el código está siendo usado por OTRO dispositivo, lo liberamos y lo asignamos al nuevo
+        // Verificar si está siendo usado por otro dispositivo
         if (codigoObj.dispositivo_id && codigoObj.dispositivo_id !== dispositivoId) {
-            console.log('Código en uso por otro dispositivo, liberando y asignando al nuevo...');
-            
-            // Liberar el código del dispositivo anterior y asignarlo al nuevo
-            await supabaseRequest(`codigos_acceso?codigo=eq.${codigo}`, {
-                method: 'PATCH',
-                body: JSON.stringify({
-                    dispositivo_id: dispositivoId,
-                    ultimo_uso: ahora
-                })
-            });
-            
-            console.log('Código liberado del dispositivo anterior y asignado al nuevo');
-            return true;
+            console.log('Código en uso por otro dispositivo');
+            return false;
         }
         
-        // Si no está en uso o es el mismo dispositivo, marcarlo como usado
+        // Si no está en uso, marcarlo como usado por este dispositivo
         await supabaseRequest(`codigos_acceso?codigo=eq.${codigo}`, {
             method: 'PATCH',
             body: JSON.stringify({
@@ -218,27 +207,31 @@ async function obtenerCodigosActivos() {
 
 async function liberarCodigo(codigo) {
     try {
-        console.log('Intentando liberar código:', codigo);
+        const dispositivoId = obtenerIdDispositivo();
+        console.log('Intentando liberar código:', codigo, 'para dispositivo:', dispositivoId);
         
         const resultado = await supabaseRequest(`codigos_acceso?codigo=eq.${codigo}&select=*`);
         
         if (resultado.length > 0) {
             const codigoObj = resultado[0];
             
-            // Liberar el código sin importar qué dispositivo lo esté usando
-            await supabaseRequest(`codigos_acceso?codigo=eq.${codigo}`, {
-                method: 'PATCH',
-                body: JSON.stringify({
-                    dispositivo_id: null,
-                    ultimo_uso: new Date().toISOString()
-                })
-            });
-            
-            console.log('✅ Código liberado exitosamente:', codigo);
-            return true;
+            // Liberar si el código está siendo usado por este dispositivo o cualquier dispositivo
+            // (esto es más permisivo para asegurar la liberación en móviles)
+            if (codigoObj.dispositivo_id === dispositivoId || codigoObj.dispositivo_id) {
+                await supabaseRequest(`codigos_acceso?codigo=eq.${codigo}`, {
+                    method: 'PATCH',
+                    body: JSON.stringify({
+                        dispositivo_id: null,
+                        ultimo_uso: new Date().toISOString()
+                    })
+                });
+                console.log('✅ Código liberado exitosamente:', codigo);
+                return true;
+            } else {
+                console.log('Código no estaba en uso o no pertenece a este dispositivo');
+                return true; // Considerar éxito aunque no estuviera en uso
+            }
         }
-        
-        console.log('Código no encontrado en la base de datos');
         return false;
     } catch (error) {
         console.error('❌ Error al liberar código:', error);
