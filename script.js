@@ -1595,15 +1595,41 @@ function mostrarModalSeleccionArchivo(archivos) {
         <h3>Selecciona un respaldo para restaurar</h3>
         <div style="max-height: 300px; overflow-y: auto;">
             ${archivos.map(archivo => `
-                <div class="archivo-item" style="padding: 10px; border-bottom: 1px solid #eee; cursor: pointer;">
+                <div class="archivo-item" style="padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; position: relative;">
                     <strong>${archivo.name}</strong>
                     <div style="font-size: 12px; color: #666;">
                         ${new Date(archivo.createdTime).toLocaleDateString()}
+                        <span style="font-size: 10px; color: #999;"> - ${formatFileSize(archivo.size)}</span>
                     </div>
+                    <button class="btn-eliminar-archivo" data-id="${archivo.id}" style="position: absolute; top: 10px; right: 10px; background: #e74c3c; color: white; border: none; border-radius: 3px; padding: 3px 6px; font-size: 10px; cursor: pointer;" onclick="event.stopPropagation(); eliminarArchivoGoogleDrive('${archivo.id}', '${archivo.name}')">
+                        <i class="fas fa-trash"></i>
+                    </button>
                 </div>
             `).join('')}
         </div>
+        <div style="margin-top: 15px; text-align: center;">
+            <button id="btn-actualizar-lista" style="background: #3498db; color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer;">
+                <i class="fas fa-sync-alt"></i> Actualizar Lista
+            </button>
+        </div>
     `;
+    
+    // Configurar evento para actualizar lista
+    setTimeout(() => {
+        document.getElementById('btn-actualizar-lista').addEventListener('click', async () => {
+            try {
+                mostrarLoading('Actualizando lista...');
+                const archivosActualizados = await listarArchivosGoogleDrive();
+                modal.classList.add('hidden');
+                mostrarModalSeleccionArchivo(archivosActualizados);
+                ocultarLoading();
+            } catch (error) {
+                console.error('Error al actualizar lista:', error);
+                ocultarLoading();
+                alert('Error al actualizar la lista de archivos');
+            }
+        });
+    }, 100);
     
     // Agregar event listeners a los elementos de archivo
     setTimeout(() => {
@@ -1650,7 +1676,7 @@ async function listarArchivosGoogleDrive() {
     const response = await fetch(
         `https://www.googleapis.com/drive/v3/files?` +
         `q=name contains 'respaldo_rifas_sucre' and mimeType='application/json'&` +
-        `fields=files(id,name,createdTime,modifiedTime)&` +
+        `fields=files(id,name,createdTime,modifiedTime,size)&` +
         `orderBy=createdTime desc`,
         {
             method: 'GET',
@@ -4099,6 +4125,9 @@ function mostrarRespaldo() {
             <button id="btn-restaurar-respaldo"><i class="fas fa-upload"></i> Restaurar Respaldo Local</button>
             <button id="btn-google-drive-backup"><i class="fab fa-google-drive"></i> Guardar en Google Drive</button>
             <button id="btn-google-drive-restore"><i class="fab fa-google-drive"></i> Restaurar desde Google Drive</button>
+            <button id="btn-gestion-google-drive" style="background-color: #7f8c8d;">
+                <i class="fas fa-cog"></i> Gestionar Google Drive
+            </button>
         </div>
         
         <div id="google-drive-section" style="margin-top: 20px; padding: 15px; background: #f9f9f9; border-radius: 5px;">
@@ -4122,6 +4151,9 @@ function mostrarRespaldo() {
     
     // Actualizar estado de Google Drive
     verificarAutenticacionGoogle();
+    
+// Agregar evento para el nuevo botón de gestión
+    document.getElementById('btn-gestion-google-drive').addEventListener('click', mostrarOpcionesGoogleDrive);
 }
 
 async function crearRespaldo() {
@@ -5199,4 +5231,177 @@ function abrirGeneradorCuadriculas(rifa) {
     window.open('https://leonardyjhn.github.io/generadorlinda/', '_blank');
     
     alert(`Redirigiendo al generador de cuadrículas para la rifa "${rifa.nombre}"`);
+}
+
+// Función para formatear el tamaño del archivo
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
+
+// Función para eliminar archivo de Google Drive
+async function eliminarArchivoGoogleDrive(fileId, fileName) {
+    if (!confirm(`¿Estás seguro de que deseas eliminar el archivo "${fileName}"? Esta acción no se puede deshacer.`)) {
+        return;
+    }
+    
+    try {
+        mostrarLoading('Eliminando archivo...');
+        
+        const response = await fetch(
+            `https://www.googleapis.com/drive/v3/files/${fileId}`,
+            {
+                method: 'DELETE',
+                headers: {
+                    'Authorization': `Bearer ${googleAccessToken}`
+                }
+            }
+        );
+        
+        if (response.ok) {
+            ocultarLoading();
+            alert('✅ Archivo eliminado correctamente');
+            
+            // Actualizar la lista de archivos
+            const archivos = await listarArchivosGoogleDrive();
+            const modal = document.getElementById('google-drive-modal');
+            const content = document.getElementById('google-drive-content');
+            
+            if (archivos.length === 0) {
+                modal.classList.add('hidden');
+                alert('No hay más respaldos en tu Google Drive');
+            } else {
+                mostrarModalSeleccionArchivo(archivos);
+            }
+        } else {
+            throw new Error(`Error ${response.status}: ${response.statusText}`);
+        }
+    } catch (error) {
+        console.error('Error al eliminar archivo:', error);
+        ocultarLoading();
+        alert('❌ Error al eliminar el archivo: ' + error.message);
+    }
+}
+
+// Función para mostrar opciones de gestión de Google Drive
+function mostrarOpcionesGoogleDrive() {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 500px;">
+            <span class="close-modal">&times;</span>
+            <h2>Gestión de Google Drive</h2>
+            <div class="button-group" style="display: flex; flex-direction: column; gap: 10px;">
+                <button id="btn-ver-archivos" style="background: #3498db;">
+                    <i class="fas fa-list"></i> Ver y Gestionar Archivos
+                </button>
+                <button id="btn-liberar-espacio" style="background: #e67e22;">
+                    <i class="fas fa-broom"></i> Limpiar Archivos Antiguos
+                </button>
+                <button id="btn-cerrar-gestion" style="background: #7f8c8d;">
+                    <i class="fas fa-times"></i> Cerrar
+                </button>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    modal.classList.remove('hidden');
+    
+    // Configurar eventos
+    modal.querySelector('.close-modal').addEventListener('click', () => {
+        modal.remove();
+    });
+    
+    document.getElementById('btn-cerrar-gestion').addEventListener('click', () => {
+        modal.remove();
+    });
+    
+    document.getElementById('btn-ver-archivos').addEventListener('click', async () => {
+        modal.remove();
+        await iniciarGoogleDriveRestore();
+    });
+    
+    document.getElementById('btn-liberar-espacio').addEventListener('click', async () => {
+        modal.remove();
+        await limpiarArchivosAntiguos();
+    });
+}
+
+// Función para limpiar archivos antiguos automáticamente
+async function limpiarArchivosAntiguos() {
+    const dias = prompt('¿Eliminar archivos más antiguos de cuántos días? (Ej: 30 para eliminar archivos de más de 30 días)', '30');
+    
+    if (!dias || isNaN(dias)) {
+        return;
+    }
+    
+    const diasNum = parseInt(dias);
+    const fechaLimite = new Date();
+    fechaLimite.setDate(fechaLimite.getDate() - diasNum);
+    
+    try {
+        mostrarLoading('Buscando archivos antiguos...');
+        const archivos = await listarArchivosGoogleDrive();
+        
+        const archivosAntiguos = archivos.filter(archivo => {
+            const fechaCreacion = new Date(archivo.createdTime);
+            return fechaCreacion < fechaLimite;
+        });
+        
+        ocultarLoading();
+        
+        if (archivosAntiguos.length === 0) {
+            alert(`No se encontraron archivos más antiguos de ${diasNum} días`);
+            return;
+        }
+        
+        if (!confirm(`Se encontraron ${archivosAntiguos.length} archivos más antiguos de ${diasNum} días. ¿Deseas eliminarlos todos?`)) {
+            return;
+        }
+        
+        mostrarLoading(`Eliminando ${archivosAntiguos.length} archivos...`);
+        let eliminados = 0;
+        let errores = 0;
+        
+        for (const archivo of archivosAntiguos) {
+            try {
+                await eliminarArchivoGoogleDriveSilent(archivo.id);
+                eliminados++;
+            } catch (error) {
+                console.error(`Error al eliminar ${archivo.name}:`, error);
+                errores++;
+            }
+        }
+        
+        ocultarLoading();
+        alert(`Proceso completado:\n✅ ${eliminados} archivos eliminados\n❌ ${errores} errores`);
+        
+    } catch (error) {
+        console.error('Error al limpiar archivos:', error);
+        ocultarLoading();
+        alert('Error al limpiar archivos antiguos');
+    }
+}
+
+// Función silenciosa para eliminar archivos (sin mostrar modales)
+async function eliminarArchivoGoogleDriveSilent(fileId) {
+    const response = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${fileId}`,
+        {
+            method: 'DELETE',
+            headers: {
+                'Authorization': `Bearer ${googleAccessToken}`
+            }
+        }
+    );
+    
+    if (!response.ok) {
+        throw new Error(`Error ${response.status}`);
+    }
+    
+    return true;
 }
