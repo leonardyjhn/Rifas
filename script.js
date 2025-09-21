@@ -2101,10 +2101,10 @@ function mostrarRifas() {
         const disponibles = rifa.totalNumeros - apartados - abonados - pagados;
         
         rifaEstado.innerHTML = `
-            <span>Disponibles: ${disponibles}</span>
-            <span>Apartados: ${apartados}</span>
-            <span>Abonados: ${abonados}</span>
-            <span>Pagados: ${pagados}</span>
+            <span>Disp: ${disponibles}</span>
+    <span>Apartados: ${apartados}</span>
+    <span>Abon: ${abonados}</span>
+    <span>Pagados: ${pagados}</span>
         `;
         
         const rifaAcciones = document.createElement('div');
