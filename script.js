@@ -1548,8 +1548,8 @@ async function iniciarGoogleDriveBackup() {
             type: 'application/json' 
         });
         
-        // Subir a Google Drive
-        const fileName = `respaldo_rifas_sucre_${new Date().toISOString().slice(0, 10)}.json`;
+        // Subir a Google Drive - CAMBIO: "sucre" por "web"
+        const fileName = `respaldo_rifas_web_${new Date().toISOString().slice(0, 10)}.json`;
         const fileId = await subirArchivoGoogleDrive(blob, fileName);
         
         ocultarLoading();
@@ -1671,11 +1671,11 @@ async function subirArchivoGoogleDrive(blob, fileName) {
     return data.id;
 }
 
-// Listar archivos de respaldo en Google Drive
+// Listar archivos de respaldo en Google Drive - CAMBIO: buscar por "respaldo" en lugar del nombre completo
 async function listarArchivosGoogleDrive() {
     const response = await fetch(
         `https://www.googleapis.com/drive/v3/files?` +
-        `q=name contains 'respaldo_rifas_sucre' and mimeType='application/json'&` +
+        `q=name contains 'respaldo' and mimeType='application/json'&` +
         `fields=files(id,name,createdTime,modifiedTime,size)&` +
         `orderBy=createdTime desc`,
         {
@@ -4177,7 +4177,8 @@ async function crearRespaldo() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `respaldo_rifas_sucre_${new Date().toISOString().slice(0, 10)}.json`;
+        // CAMBIO: "sucre" por "web"
+        a.download = `respaldo_rifas_web_${new Date().toISOString().slice(0, 10)}.json`;
         a.click();
         URL.revokeObjectURL(url);
         
