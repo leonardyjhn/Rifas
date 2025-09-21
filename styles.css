@@ -471,14 +471,30 @@ button i {
 
 .rifa-acciones {
     display: flex;
-    gap: 10px;
+    flex-wrap: wrap;
+    gap: 8px;
     margin-top: 15px;
 }
 
 .rifa-acciones button {
     flex: 1;
+    min-width: calc(50% - 10px);
     padding: 8px;
     font-size: 14px;
+    box-sizing: border-box;
+}
+
+/* Para pantallas más grandes */
+@media (min-width: 768px) {
+    .rifa-acciones {
+        flex-wrap: nowrap;
+        gap: 10px;
+    }
+    
+    .rifa-acciones button {
+        min-width: auto;
+        flex: 1;
+    }
 }
 
 /* Respaldo */
