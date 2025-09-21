@@ -1227,3 +1227,21 @@ button i {
 #btn-entendido-expirado:hover {
     background-color: #2980b9;
 }
+
+/* Estilos para el modal de CSV */
+#csv-modal .modal-content {
+    text-align: center;
+}
+
+#csv-modal .button-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+#csv-modal button {
+    width: 100%;
+    padding: 12px;
+    font-size: 16px;
+}
