@@ -2127,6 +2127,15 @@ function mostrarRifas() {
             mostrarCuadriculaCompleta(rifa);
         });
         
+        // NUEVO: Botón CSV con menú desplegable
+        const btnCSV = document.createElement('button');
+        btnCSV.textContent = 'CSV';
+        btnCSV.style.backgroundColor = '#9b59b6';
+        btnCSV.addEventListener('click', (e) => {
+            e.stopPropagation();
+            mostrarOpcionesCSV(rifa);
+        });
+        
         const btnEditar = document.createElement('button');
         btnEditar.textContent = 'Editar';
         btnEditar.addEventListener('click', () => mostrarModalEditarRifa(rifa));
@@ -2145,6 +2154,7 @@ function mostrarRifas() {
         
         rifaAcciones.appendChild(btnActivar);
         rifaAcciones.appendChild(btnCuadricula);
+        rifaAcciones.appendChild(btnCSV); // NUEVO: Agregar botón CSV
         rifaAcciones.appendChild(btnEditar);
         rifaAcciones.appendChild(btnEliminar);
         
@@ -5084,3 +5094,109 @@ window.addEventListener('load', function() {
         }
     }
 });
+
+// Función para mostrar opciones CSV
+function mostrarOpcionesCSV(rifa) {
+    // Guardar la rifa seleccionada en una variable global temporal
+    window.rifaCSVActual = rifa;
+    
+    // Mostrar el modal de opciones CSV
+    const csvModal = document.getElementById('csv-modal');
+    csvModal.classList.remove('hidden');
+    
+    // Configurar eventos para los botones
+    document.getElementById('btn-descargar-csv').onclick = () => {
+        descargarCSV(rifa);
+        csvModal.classList.add('hidden');
+    };
+    
+    document.getElementById('btn-generador-cuadriculas').onclick = () => {
+        abrirGeneradorCuadriculas(rifa);
+        csvModal.classList.add('hidden');
+    };
+}
+
+// Función para descargar CSV
+function descargarCSV(rifa) {
+    // Obtener clientes de esta rifa
+    const clientesRifa = clientes.filter(c => c.rifaId === rifa.id);
+    
+    // Crear contenido CSV con la estructura exacta del ejemplo
+    let csvContent = "Número,Estado,Cliente\n";
+    
+    // Crear un array para todos los números
+    const todosNumeros = [];
+    
+    // Procesar cada cliente y sus números
+    clientesRifa.forEach(cliente => {
+        cliente.numeros.split(',').forEach(numCompleto => {
+            const [num, estado] = numCompleto.includes(':') ? 
+                numCompleto.split(':') : 
+                [numCompleto, cliente.estado];
+                
+            const numFormateado = parseInt(num).toString().padStart(3, '0');
+            
+            // Traducir estados al español como en el ejemplo
+            let estadoTraducido = estado;
+            if (estado === 'disponible') estadoTraducido = 'disponible';
+            if (estado === 'apartado') estadoTraducido = 'apartado';
+            if (estado === 'pagado') estadoTraducido = 'pagado';
+            if (estado === 'abonado') estadoTraducido = 'abonado';
+            
+            todosNumeros.push({
+                numero: numFormateado,
+                estado: estadoTraducido,
+                cliente: cliente.nombre
+            });
+        });
+    });
+    
+    // Agregar números disponibles
+    for (let i = 0; i < rifa.totalNumeros; i++) {
+        const numFormateado = i.toString().padStart(3, '0');
+        
+        // Verificar si el número ya está en la lista
+        const existe = todosNumeros.some(item => item.numero === numFormateado);
+        
+        if (!existe) {
+            todosNumeros.push({
+                numero: numFormateado,
+                estado: 'disponible',
+                cliente: ''
+            });
+        }
+    }
+    
+    // Ordenar números numéricamente
+    todosNumeros.sort((a, b) => parseInt(a.numero) - parseInt(b.numero));
+    
+    // Agregar filas al CSV (SIN comillas y SIN teléfono)
+    todosNumeros.forEach(item => {
+        csvContent += `${item.numero},${item.estado},${item.cliente}\n`;
+    });
+    
+    // Crear blob y descargar
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    
+    // Nombre del archivo con fecha (igual al ejemplo)
+    const fecha = new Date().toISOString().slice(0, 10);
+    const nombreArchivo = `Rifa_${rifa.nombre}_${fecha}.csv`.replace(/[^a-zA-Z0-9_]/g, '_');
+    
+    link.setAttribute('download', nombreArchivo);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    alert(`CSV de la rifa "${rifa.nombre}" descargado correctamente`);
+}
+
+// Función para abrir el generador de cuadrículas
+function abrirGeneradorCuadriculas(rifa) {
+    // Abrir en una nueva pestaña
+    window.open('https://leonardyjhn.github.io/generadorlinda/', '_blank');
+    
+    alert(`Redirigiendo al generador de cuadrículas para la rifa "${rifa.nombre}"`);
+}
