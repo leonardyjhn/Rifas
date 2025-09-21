@@ -4712,22 +4712,52 @@ function imprimirFactura(cliente) {
     }
 
     // Mostrar modal de confirmación de impresión
-    document.getElementById('imprimir-factura-modal').classList.remove('hidden');
+    const modal = document.getElementById('imprimir-factura-modal');
+    modal.classList.remove('hidden');
     
-    // Configurar eventos de los botones
-    document.getElementById('btn-imprimir-factura').onclick = () => {
-        generarFactura(cliente, parseInt(document.getElementById('tamano-impresion').value));
-        document.getElementById('imprimir-factura-modal').classList.add('hidden');
+    // Limpiar eventos previos para evitar duplicados
+    const btnImprimir = document.getElementById('btn-imprimir-factura');
+    const btnCancelar = document.getElementById('btn-cancelar-impresion');
+    
+    // Crear clones para eliminar event listeners anteriores
+    const newBtnImprimir = btnImprimir.cloneNode(true);
+    const newBtnCancelar = btnCancelar.cloneNode(true);
+    
+    btnImprimir.parentNode.replaceChild(newBtnImprimir, btnImprimir);
+    btnCancelar.parentNode.replaceChild(newBtnCancelar, btnCancelar);
+    
+    // Configurar nuevos eventos
+    newBtnImprimir.onclick = function() {
+        const tamano = parseInt(document.getElementById('tamano-impresion').value);
+        generarFactura(cliente, tamano);
+        modal.classList.add('hidden');
     };
     
-    document.getElementById('btn-cancelar-impresion').onclick = () => {
-        document.getElementById('imprimir-factura-modal').classList.add('hidden');
+    newBtnCancelar.onclick = function() {
+        modal.classList.add('hidden');
     };
+    
+    // Enfocar el botón de imprimir para mejor UX
+    setTimeout(() => {
+        newBtnImprimir.focus();
+    }, 100);
 }
 
 // Función para generar la factura
 function generarFactura(cliente, ancho) {
+    // Validación adicional
+    if (!cliente || !ancho) {
+        console.error('Datos inválidos para generar factura:', {cliente, ancho});
+        alert('Error: Datos inválidos para generar la factura');
+        return;
+    }
+    
     const rifa = rifas.find(r => r.id === cliente.rifaId);
+    if (!rifa) {
+        alert('No se encontró la rifa asociada al cliente');
+        return;
+    }
+    
     const cantidadNumeros = cliente.numeros.split(',').length;
     const precioUnitario = rifa.precio || 0;
     const total = cantidadNumeros * precioUnitario;
