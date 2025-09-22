@@ -1548,12 +1548,24 @@ async function iniciarGoogleDriveBackup() {
             type: 'application/json' 
         });
         
-        // Subir a Google Drive - CAMBIO: "sucre" por "web"
-        const fileName = `respaldo_rifas_web_${new Date().toISOString().slice(0, 10)}.json`;
-        const fileId = await subirArchivoGoogleDrive(blob, fileName);
+        // Usar nombre fijo en lugar de nombre con fecha
+        const fileName = `respaldo_rifas_web.json`;
+        
+        // Buscar si ya existe un archivo con este nombre
+        const archivos = await listarArchivosGoogleDrive();
+        const archivoExistente = archivos.find(archivo => archivo.name === fileName);
+        
+        let fileId;
+        if (archivoExistente) {
+            // Si existe, actualizarlo (sobreescribir)
+            fileId = await actualizarArchivoGoogleDrive(archivoExistente.id, blob);
+        } else {
+            // Si no existe, crear uno nuevo
+            fileId = await subirArchivoGoogleDrive(blob, fileName);
+        }
         
         ocultarLoading();
-        alert(`Respaldo guardado exitosamente en Google Drive\n\nArchivo: ${fileName}`);
+        alert(`Respaldo ${archivoExistente ? 'actualizado' : 'guardado'} exitosamente en Google Drive\n\nArchivo: ${fileName}`);
     } catch (error) {
         console.error('Error al guardar en Google Drive:', error);
         ocultarLoading();
@@ -1665,6 +1677,32 @@ async function subirArchivoGoogleDrive(blob, fileName) {
     
     if (!response.ok) {
         throw new Error('Error al subir archivo: ' + response.statusText);
+    }
+    
+    const data = await response.json();
+    return data.id;
+}
+
+// Actualizar archivo existente en Google Drive
+async function actualizarArchivoGoogleDrive(fileId, blob) {
+    const formData = new FormData();
+    formData.append('metadata', new Blob([JSON.stringify({
+        name: `respaldo_rifas_web.json`,
+        mimeType: 'application/json'
+    })], { type: 'application/json' }));
+    
+    formData.append('file', blob);
+    
+    const response = await fetch(`https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart`, {
+        method: 'PATCH',
+        headers: {
+            'Authorization': `Bearer ${googleAccessToken}`
+        },
+        body: formData
+    });
+    
+    if (!response.ok) {
+        throw new Error('Error al actualizar archivo: ' + response.statusText);
     }
     
     const data = await response.json();
