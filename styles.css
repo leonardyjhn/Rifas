@@ -1261,3 +1261,263 @@ button i {
     padding: 12px;
     font-size: 16px;
 }
+
+/* Estilos para el buscador de números ganadores */
+.buscador-ganador {
+    background: rgba(255, 255, 255, 0.1);
+    padding: 15px;
+    border-radius: 8px;
+    margin: 10px 0;
+    border: 2px solid #3498db;
+}
+
+.input-group-ganador {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.input-group-ganador input {
+    flex: 1;
+    min-width: 200px;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 16px;
+}
+
+.input-group-ganador button {
+    background-color: #27ae60;
+    color: white;
+    padding: 10px 15px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.input-group-ganador button:hover {
+    background-color: #219653;
+}
+
+/* Estilos para el modal de ganador */
+/* Estilos para el modal de ganador */
+.info-ganador {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 8px;
+    margin: 20px 0;
+}
+
+.ganador-item {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.ganador-item:last-child {
+    border-bottom: none;
+    margin-bottom: 0;
+}
+
+.estado-ganador.pagado {
+    color: #27ae60;
+    font-weight: bold;
+    background: none !important; /* Quitar fondo */
+    padding: 0 !important; /* Quitar padding */
+}
+
+.estado-ganador.apartado {
+    color: #f39c12;
+    font-weight: bold;
+    background: none !important; /* Quitar fondo */
+    padding: 0 !important; /* Quitar padding */
+}
+
+.estado-ganador.abonado {
+    color: #e67e22;
+    font-weight: bold;
+    background: none !important; /* Quitar fondo */
+    padding: 0 !important; /* Quitar padding */
+}
+
+/* Asegurar que no haya fondos en los estados del modal */
+#ganador-modal .estado-ganador {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+.acciones-ganador {
+    text-align: center;
+    margin-top: 20px;
+}
+
+.btn-whatsapp {
+    background-color: #25D366 !important;
+    color: white;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 16px;
+    width: 100%;
+}
+
+.btn-whatsapp:hover {
+    background-color: #128C7E !important;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .input-group-ganador {
+        flex-direction: column;
+    }
+    
+    .input-group-ganador input {
+        min-width: 100%;
+    }
+    
+    .ganador-item {
+        flex-direction: column;
+        gap: 5px;
+    }
+}
+
+/* Estilos para Planilla C Flash */
+.c-flash-container {
+    font-family: Arial, sans-serif;
+    width: 720px;
+    height: 1280px;
+    overflow: hidden;
+    background-color: white;
+    position: relative;
+    border: 2px solid #000000; /* Borde negro exterior más grueso */
+}
+
+.c-flash-table-container {
+    width: 690px;
+    height: 1220px;
+    overflow: hidden;
+    border: 2px solid #000000; /* Borde negro más grueso */
+}
+
+.c-flash-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 12px;
+    border: 2px solid #000000;
+    text-align: center;
+    color: #000000 !important; /* FORZAR TEXTO NEGRO EN TODA LA TABLA */
+}
+
+.c-flash-th, .c-flash-td {
+    border: 1px solid #000000;
+    padding: 4px;
+    text-align: center;
+    height: 23px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+    color: #000000 !important; /* TEXTO NEGRO GARANTIZADO */
+    font-weight: bold !important; /* CAMBIO A NEGRITA */
+}
+
+.c-flash-th {
+    background-color: #f2f2f2;
+    font-weight: bold;
+    border: 2px solid #000000;
+    color: #000000 !important; /* TEXTO NEGRO EN ENCABEZADOS */
+}
+
+.c-flash-col-group-1 {
+    background-color: #e6f7ff;
+}
+
+.c-flash-col-group-2 {
+    background-color: #fff2e6;
+}
+
+.c-flash-narrow-column {
+    width: 8%;
+}
+
+.c-flash-name-column {
+    width: 40%;
+}
+
+.c-flash-status-column {
+    width: 12%;
+}
+
+/* Estilos para estados en la planilla - CON TEXTO NEGRO */
+.c-flash-disponible {
+    background-color: white;
+    color: #000000 !important; /* TEXTO NEGRO */
+}
+
+.c-flash-apartado {
+    background-color: #f1c40f;
+    color: #000000 !important; /* TEXTO NEGRO */
+}
+
+.c-flash-abonado {
+    background-color: #e67e22;
+    color: #000000 !important; /* TEXTO NEGRO */
+}
+
+.c-flash-pagado {
+    background-color: #2ecc71;
+    color: #000000 !important; /* TEXTO NEGRO */
+}
+
+/* Asegurar bordes visibles */
+.c-flash-table tr {
+    border: 1px solid #000000;
+}
+
+.c-flash-table td {
+    border: 1px solid #000000 !important;
+}
+
+.c-flash-table th {
+    border: 2px solid #000000 !important;
+}
+
+/* Estilos específicos para el contenido de las celdas */
+.c-flash-td span, .c-flash-th span {
+    color: #000000 !important;
+    font-weight: normal;
+}
+
+/* Forzar color negro en todo el contenido de la planilla */
+.c-flash-container * {
+    color: #000000 !important;
+}
+
+/* Encabezados en negrita */
+.c-flash-th {
+    background-color: #f2f2f2;
+    font-weight: bold !important;
+    border: 2px solid #000000 !important;
+    color: #000000 !important;
+}
+
+/* Bordes adicionales para mejorar la visibilidad */
+.c-flash-table tr {
+    border: 1px solid #000000; /* Bordes entre filas */
+}
+
+.c-flash-table td {
+    border: 1px solid #000000 !important; /* Forzar bordes negros en todas las celdas */
+}
+
+.c-flash-table th {
+    border: 2px solid #000000 !important; /* Bordes más gruesos en encabezados */
+}
+
