@@ -3352,7 +3352,25 @@ function normalizarTelefono(telefono) {
     if (!telefono) return '';
     
     // Eliminar todo excepto números
-    return telefono.replace(/[^\d]/g, '');
+    let numeros = telefono.replace(/[^\d]/g, '');
+    
+    // Si empieza con 58 (código de país), mantener como está
+    if (numeros.startsWith('58')) {
+        return numeros;
+    }
+    
+    // Si empieza con 0 (como 0424...) quitar el 0 y agregar 58
+    if (numeros.startsWith('0')) {
+        return '58' + numeros.substring(1);
+    }
+    
+    // Si tiene 10 dígitos sin código de país (4245244171), agregar 58
+    if (numeros.length === 10) {
+        return '58' + numeros;
+    }
+    
+    // Para cualquier otro caso, devolver los números limpios
+    return numeros;
 }
 
 async function guardarClienteEditado(id) {
